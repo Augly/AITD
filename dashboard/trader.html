@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AITD</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title-block">
+        <img class="brand-logo" src="/assets/aitd-readme-header.png" alt="AITD - AI Trading Agent for Everyone">
+        <div class="title-meta-row">
+          <p id="tradeRunMeta" class="meta">读取运行状态中…</p>
+          <button id="themeToggleBtn" type="button" class="secondary-button">切到浅色</button>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span id="tradeRefreshHint" class="refresh-hint">自动刷新中</span>
+        <div class="top-actions-row">
+          <button id="toggleModeBtn" type="button" class="secondary-button">查看实盘</button>
+          <button id="flattenBtn" type="button" class="secondary-button">全部平仓</button>
+          <button id="resetBtn" type="button" class="secondary-button danger-outline" hidden>重置模拟盘</button>
+        </div>
+        <div class="top-actions-row top-actions-row-secondary">
+          <button id="refreshBtn" type="button" class="secondary-button">刷新</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="summary-grid" aria-label="Trader summary">
+      <div class="metric">
+        <span class="metric-label">Mode</span>
+        <strong id="modeText">读取中</strong>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Equity</span>
+        <strong id="equityText">$0</strong>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Open</span>
+        <strong id="openCountText">0</strong>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Drawdown</span>
+        <strong id="drawdownText">0%</strong>
+      </div>
+      <div class="metric metric-action">
+        <span class="metric-label">Runner</span>
+        <button id="modeRunnerBtn" type="button">启动交易</button>
+        <p id="modeRunnerMeta" class="meta metric-meta">默认暂停，到了下一次调度时间才会触发。</p>
+      </div>
+    </section>
+
+    <section class="status-strip-wrap" aria-label="Trader status">
+      <div id="statusBanner" class="status-banner"></div>
+    </section>
+
+    <main class="trader-layout">
+      <aside class="trader-side">
+        <section class="trader-section">
+          <div class="section-heading">
+            <h2>运行设置</h2>
+          </div>
+          <form id="tradingSettingsForm" class="settings-form compact-settings-form">
+            <label>
+              活动交易所
+              <select id="activeExchangeInput"></select>
+            </label>
+            <label>
+              决策间隔（分钟）
+              <input id="decisionIntervalInput" type="number" min="5" max="1440" step="5">
+            </label>
+            <label>
+              初始本金（USD）
+              <input id="initialCapitalInput" type="number" min="1" step="1">
+            </label>
+            <label>
+              每轮最多新开仓
+              <input id="maxNewPositionsInput" type="number" min="1" max="100">
+            </label>
+            <label>
+              最多持仓品种数
+              <input id="maxOpenPositionsInput" type="number" min="1" max="1000">
+            </label>
+            <label>
+              单笔最大市值（USD）
+              <input id="maxPositionNotionalInput" type="number" min="20" max="10000000000" step="10">
+            </label>
+            <label>
+              总敞口上限（%）
+              <input id="maxGrossExposureInput" type="number" min="10" max="10000" step="5">
+            </label>
+            <label>
+              账户最大回撤（%）
+              <input id="maxDrawdownInput" type="number" min="5" max="90" step="1">
+            </label>
+            <label>
+              单笔风险（%）
+              <input id="riskPerTradeInput" type="number" min="0.25" max="100" step="0.25">
+            </label>
+            <label>
+              最低置信度
+              <input id="minConfidenceInput" type="number" min="1" max="100" step="1">
+            </label>
+            <label id="paperFeesRow">
+              模拟盘手续费（bps）
+              <input id="paperFeesInput" type="number" min="0" max="50" step="1">
+            </label>
+            <label class="check-row">
+              <input id="allowShortsInput" type="checkbox" checked>
+              <span>允许做空</span>
+            </label>
+            <label>
+              页面自动刷新（秒）
+              <input id="pageAutoRefreshInput" type="number" min="10" max="600" step="5">
+            </label>
+            <div class="settings-actions">
+              <button id="saveTradingSettingsBtn" type="button">保存运行设置</button>
+            </div>
+            <p id="settingsFeedback" class="status-line">这些参数会影响下一轮调度与实际风险控制。</p>
+          </form>
+        </section>
+
+        <section id="liveConfigSection" class="trader-section" hidden>
+          <div class="section-heading">
+            <h2>实盘账号配置</h2>
+          </div>
+          <form id="liveConfigForm" class="stack-form">
+            <div class="info-row">
+              <span>本机 IP 地址</span>
+              <strong id="liveIpText">读取中…</strong>
+            </div>
+            <label>
+              交易所
+              <select id="liveExchangeInput"></select>
+            </label>
+            <p id="liveExchangeMeta" class="status-line compact-note">按交易所分别显示当前支持情况。</p>
+            <label class="check-row">
+              <input id="liveConfigEnabledInput" type="checkbox">
+              <span>启用实盘</span>
+            </label>
+            <label class="check-row">
+              <input id="liveDryRunInput" type="checkbox" checked>
+              <span>模拟下单</span>
+            </label>
+            <label>
+              API Key
+              <input id="liveApiKeyInput" type="password" placeholder="Binance API key">
+            </label>
+            <label>
+              API Secret
+              <input id="liveApiSecretInput" type="password" placeholder="Binance API secret">
+            </label>
+            <label id="liveApiPassphraseWrap" hidden>
+              API Passphrase
+              <input id="liveApiPassphraseInput" type="password" placeholder="OKX API passphrase">
+            </label>
+            <label>
+              Base URL
+              <input id="liveBaseUrlInput" type="text" placeholder="https://fapi.binance.com">
+            </label>
+            <label>
+              Default leverage
+              <input id="liveDefaultLeverageInput" type="number" min="1" max="125" step="1">
+            </label>
+            <label>
+              Margin type
+              <select id="liveMarginTypeInput">
+                <option value="cross">Cross</option>
+                <option value="isolated">Isolated</option>
+              </select>
+            </label>
+            <div class="settings-actions">
+              <button id="saveLiveConfigBtn" type="button">保存实盘配置</button>
+            </div>
+            <p id="liveConfigFeedback" class="status-line">“启用实盘”和“模拟下单”是二选一。出入金会由交易所账户流水自动同步。</p>
+          </form>
+        </section>
+
+        <section class="trader-section">
+          <div class="section-heading">
+            <h2>AI模型配置</h2>
+          </div>
+          <form id="providerForm" class="stack-form">
+            <label>
+              Provider 预设
+              <select id="providerPresetInput">
+                <option value="gpt">GPT / OpenAI</option>
+                <option value="claude">Claude / Anthropic</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="qwen">Qwen</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label>
+              API 风格
+              <select id="providerApiStyleInput">
+                <option value="openai">OpenAI compatible</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+            </label>
+            <label>
+              Model
+              <select id="providerModelInput"></select>
+            </label>
+            <label id="providerCustomModelWrap" hidden>
+              自定义模型名
+              <input id="providerCustomModelInput" type="text" placeholder="your-model-name">
+            </label>
+            <label>
+              Base URL
+              <input id="providerBaseUrlInput" type="text" placeholder="https://api.openai.com/v1">
+            </label>
+            <label>
+              API Key
+              <input id="providerApiKeyInput" type="password" placeholder="sk-...">
+            </label>
+            <div class="settings-actions">
+              <button id="providerAdvancedToggleBtn" type="button" class="secondary-button">展开高级参数</button>
+            </div>
+            <div id="providerAdvancedFields" class="advanced-fields" hidden>
+              <label>
+                Timeout（秒）
+                <input id="providerTimeoutInput" type="number" min="10" max="180" step="1">
+              </label>
+              <label>
+                Temperature
+                <input id="providerTemperatureInput" type="number" min="0" max="1.5" step="0.1">
+              </label>
+              <label>
+                Max Output Tokens
+                <input id="providerMaxTokensInput" type="number" min="256" max="4096" step="64">
+              </label>
+            </div>
+            <div class="settings-actions">
+              <button id="saveProviderBtn" type="button">保存AI模型配置</button>
+            </div>
+            <p id="providerFeedback" class="status-line"></p>
+          </form>
+        </section>
+
+        <section class="trader-section">
+          <div class="section-heading">
+            <h2>代理配置</h2>
+          </div>
+          <form id="networkForm" class="stack-form">
+            <label class="check-row inline-check-row">
+              <input id="proxyEnabledInput" type="checkbox">
+              <span>启用代理</span>
+            </label>
+            <label>
+              代理地址
+              <input id="proxyUrlInput" type="text" placeholder="http://127.0.0.1:7890">
+            </label>
+            <label>
+              不走代理的地址
+              <input id="noProxyInput" type="text" placeholder="127.0.0.1,localhost">
+            </label>
+            <div class="settings-actions">
+              <button id="saveNetworkBtn" type="button">保存代理配置</button>
+            </div>
+            <p id="networkFeedback" class="status-line">关闭后会完全直连。</p>
+          </form>
+        </section>
+      </aside>
+
+      <section class="trader-main">
+        <div class="trader-tabs" role="tablist" aria-label="Trader main tabs">
+          <button type="button" class="tab-button active" data-tab-button="trade" role="tab" aria-selected="true">交易</button>
+          <button type="button" class="tab-button" data-tab-button="prompt" role="tab" aria-selected="false">Prompt</button>
+          <button type="button" class="tab-button" data-tab-button="universe" role="tab" aria-selected="false">候选池</button>
+          <button type="button" class="tab-button" data-tab-button="log" role="tab" aria-selected="false">Log</button>
+        </div>
+
+        <div class="trader-tab-panel is-active" data-tab-panel="trade">
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>当前账户</h2>
+              <p id="accountMeta" class="meta">等待账户状态</p>
+            </div>
+            <div id="accountGrid"></div>
+          </section>
+
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>当前持仓</h2>
+              <p id="positionMeta" class="meta">0 个持仓</p>
+            </div>
+            <div id="positionCards" class="trader-position-grid"></div>
+          </section>
+
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>已平仓位</h2>
+              <p id="closedPositionMeta" class="meta">读取中</p>
+            </div>
+            <div id="closedPositionList" class="trader-position-grid"></div>
+          </section>
+
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>候选池</h2>
+              <p id="candidateMeta" class="meta">读取中</p>
+            </div>
+            <div id="candidateList" class="candidate-list"></div>
+          </section>
+
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>最近决策</h2>
+              <p id="decisionMeta" class="meta">最近几轮 prompt、模型输出与动作</p>
+            </div>
+            <div id="decisionLog" class="decision-log"></div>
+          </section>
+        </div>
+
+        <div class="trader-tab-panel" data-tab-panel="prompt" hidden>
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>交易逻辑</h2>
+            </div>
+            <form id="promptForm" class="stack-form">
+              <label>
+                Prompt 名称
+                <input id="promptNameInput" type="text" placeholder="例如：trend_following_15m">
+              </label>
+              <label class="prompt-input-group">
+                <span class="prompt-input-head">
+                  <span><code>role</code></span>
+                  <button type="button" class="secondary-button prompt-expand-btn" data-prompt-expand="role">展开</button>
+                </span>
+                <textarea id="promptRoleInput" class="code-textarea code-textarea-short prompt-textarea-short" spellcheck="false" rows="3"></textarea>
+              </label>
+              <label class="prompt-input-group">
+                <span class="prompt-input-head">
+                  <span><code>core_principles</code></span>
+                  <button type="button" class="secondary-button prompt-expand-btn" data-prompt-expand="corePrinciples">展开</button>
+                </span>
+                <textarea id="promptCorePrinciplesInput" class="code-textarea code-textarea-short prompt-textarea-short" spellcheck="false" rows="3"></textarea>
+              </label>
+              <label class="prompt-input-group">
+                <span class="prompt-input-head">
+                  <span><code>entry_preferences</code></span>
+                  <button type="button" class="secondary-button prompt-expand-btn" data-prompt-expand="entryPreferences">展开</button>
+                </span>
+                <textarea id="promptEntryPreferencesInput" class="code-textarea code-textarea-short prompt-textarea-short" spellcheck="false" rows="3"></textarea>
+              </label>
+              <label class="prompt-input-group">
+                <span class="prompt-input-head">
+                  <span><code>position_management</code></span>
+                  <button type="button" class="secondary-button prompt-expand-btn" data-prompt-expand="positionManagement">展开</button>
+                </span>
+                <textarea id="promptPositionManagementInput" class="code-textarea code-textarea-short prompt-textarea-short" spellcheck="false" rows="3"></textarea>
+              </label>
+              <div class="prompt-kline-block">
+                <div class="prompt-kline-head">
+                  <strong>加入 Prompt 的原始 K 线</strong>
+                  <span class="meta">合理安排输入K线数量, 过多K线会增加模型思考时间,增加token消耗</span>
+                </div>
+                <div class="prompt-kline-table">
+                  <label class="prompt-kline-row">
+                    <span class="check-row prompt-kline-toggle">
+                      <input type="checkbox" data-prompt-kline-enabled="1m">
+                      <span>1m</span>
+                    </span>
+                    <span class="prompt-kline-count">
+                      <span>根数</span>
+                      <input type="number" min="1" max="300" step="1" data-prompt-kline-limit="1m">
+                    </span>
+                  </label>
+                  <label class="prompt-kline-row">
+                    <span class="check-row prompt-kline-toggle">
+                      <input type="checkbox" data-prompt-kline-enabled="5m">
+                      <span>5m</span>
+                    </span>
+                    <span class="prompt-kline-count">
+                      <span>根数</span>
+                      <input type="number" min="1" max="300" step="1" data-prompt-kline-limit="5m">
+                    </span>
+                  </label>
+                  <label class="prompt-kline-row">
+                    <span class="check-row prompt-kline-toggle">
+                      <input type="checkbox" data-prompt-kline-enabled="15m">
+                      <span>15m</span>
+                    </span>
+                    <span class="prompt-kline-count">
+                      <span>根数</span>
+                      <input type="number" min="1" max="300" step="1" data-prompt-kline-limit="15m">
+                    </span>
+                  </label>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button id="savePromptBtn" type="submit">保存当前使用</button>
+                <button id="savePromptPresetBtn" type="button" class="secondary-button">保存到已保存 Prompt</button>
+                <button id="testPromptBtn" type="button" class="secondary-button">测试交易逻辑</button>
+              </div>
+              <p id="promptPresetMeta" class="meta">当前编辑内容还没有关联到已保存 Prompt。</p>
+              <p id="promptFeedback" class="status-line"></p>
+            </form>
+            <div class="prompt-test-block">
+              <div class="section-heading">
+                <h2>测试输出</h2>
+                <p id="promptTestMeta" class="meta">点击“测试交易逻辑”后显示结果。</p>
+              </div>
+              <pre id="promptTestOutput" class="pre-block">尚未执行测试。</pre>
+            </div>
+            <div class="prompt-test-block">
+              <div class="section-heading">
+                <h2>已保存 Prompt</h2>
+                <p id="savedPromptMeta" class="meta">还没有已保存 Prompt。</p>
+              </div>
+              <div id="savedPromptList" class="saved-prompt-list"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="trader-tab-panel" data-tab-panel="universe" hidden>
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>候选池</h2>
+              <p id="universeMeta" class="meta">选择静态或动态其中一种候选池模式。</p>
+            </div>
+            <div class="universe-help-block">
+              <p>候选池是交易标的范围，每轮模型决策会从这个列表去选择是否交易。</p>
+              <p>静态候选池为手动输入，保存后生效。</p>
+              <p>动态候选池允许用户写 python function 读取文件或者读取外部 API，每轮决策前都会自动调用。</p>
+              <p><code>load_candidate_symbols</code> 函数输出要求为 <code>list</code>。</p>
+              <p>静态候选池和动态候选池二选一。</p>
+            </div>
+            <div class="universe-mode-row">
+              <label class="check-row">
+                <input id="staticUniverseEnabledInput" type="checkbox">
+                <span>静态候选池</span>
+              </label>
+              <label class="check-row">
+                <input id="dynamicUniverseEnabledInput" type="checkbox">
+                <span>动态候选池</span>
+              </label>
+            </div>
+          </section>
+
+          <section id="staticUniverseSection" class="trader-section">
+            <div class="section-heading">
+              <h2>静态候选池</h2>
+              <p class="meta">手动输入交易标的。</p>
+            </div>
+            <form id="universeForm" class="stack-form">
+              <label>
+                交易池 Symbols（每行一个）
+                <textarea id="universeSymbolsInput" class="code-textarea code-textarea-short" spellcheck="false"></textarea>
+              </label>
+              <div class="settings-actions">
+                <button id="saveUniverseBtn" type="button">保存候选池</button>
+              </div>
+              <p id="universeFeedback" class="status-line">保存后会自动刷新候选池，让交易页尽快显示新结果。</p>
+            </form>
+          </section>
+
+          <section id="dynamicUniverseSection" class="trader-section" hidden>
+            <div class="section-heading">
+              <h2>动态候选池</h2>
+              <p id="universePreviewMeta" class="meta">每轮决策前都会调用这个函数获取 symbols。</p>
+            </div>
+            <div class="stack-form">
+              <label>
+                Python 函数
+                <textarea id="candidateSourceCodeInput" class="code-textarea" spellcheck="false"></textarea>
+              </label>
+              <div class="settings-actions">
+                <button id="saveDynamicUniverseBtn" type="button">保存动态候选池</button>
+                <button id="testUniverseBtn" type="button" class="secondary-button">测试获取</button>
+              </div>
+              <p class="status-line">函数需要定义 <code>load_candidate_symbols(context)</code>，并返回 <code>list[str]</code>。</p>
+            </div>
+            <div class="prompt-test-block">
+              <div class="section-heading">
+                <h2>测试输出</h2>
+                <p id="universeTestMeta" class="meta">点击“测试获取”后显示结果。</p>
+              </div>
+              <pre id="universePreview" class="pre-block">尚未执行测试。</pre>
+            </div>
+          </section>
+        </div>
+
+        <div class="trader-tab-panel" data-tab-panel="log" hidden>
+          <section class="trader-section">
+            <div class="section-heading">
+              <h2>系统日志</h2>
+              <p id="logMeta" class="meta">读取运行状态中…</p>
+            </div>
+            <div id="logSummaryGrid" class="log-summary-grid"></div>
+            <pre id="logOutput" class="pre-block log-output">正在读取日志…</pre>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="promptModal" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <div class="section-heading">
+          <h2 id="promptModalTitle">编辑交易逻辑</h2>
+          <p id="promptModalMeta" class="meta">放大编辑后，点击“应用修改”回填到当前输入框。</p>
+        </div>
+        <textarea id="promptModalInput" class="code-textarea prompt-modal-textarea" spellcheck="false"></textarea>
+        <div class="settings-actions">
+          <button id="promptModalApplyBtn" type="button">应用修改</button>
+          <button id="promptModalCloseBtn" type="button" class="secondary-button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/trader.js"></script>
+  </body>
+</html>

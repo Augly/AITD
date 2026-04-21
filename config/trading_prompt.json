@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "updated": "2026-04-22",
+  "name": "default_trading_logic",
+  "presetId": null,
+  "klineFeeds": {
+    "1m": {
+      "enabled": false,
+      "limit": 120
+    },
+    "5m": {
+      "enabled": false,
+      "limit": 96
+    },
+    "15m": {
+      "enabled": true,
+      "limit": 64
+    }
+  },
+  "decision_logic": {
+    "role": "You are a careful crypto futures trader.",
+    "core_principles": [
+      "Protect capital first."
+    ],
+    "entry_preferences": [
+      "Only trade clear setups."
+    ],
+    "position_management": [
+      "Cut losers quickly and take profit simply."
+    ],
+    "response_style": [
+      "Return strict JSON only.",
+      "Every action must include a short reason tied to current market structure."
+    ]
+  },
+  "role": "You are a careful crypto futures trader.",
+  "corePrinciplesText": "Protect capital first.",
+  "entryPreferencesText": "Only trade clear setups.",
+  "positionManagementText": "Cut losers quickly and take profit simply."
+}

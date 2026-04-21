@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "updated": "2026-04-22",
+  "exchange": "binance",
+  "market": "usdm_futures",
+  "enabled": false,
+  "baseUrl": "https://fapi.binance.com",
+  "apiKey": "",
+  "apiSecret": "",
+  "apiPassphrase": "",
+  "recvWindow": 5000,
+  "dryRun": true,
+  "positionMode": "oneway",
+  "marginType": "cross",
+  "defaultLeverage": 3,
+  "note": "Fill the API credentials, keep dryRun on first, and only disable dryRun after you have verified the full flow."
+}

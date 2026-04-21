@@ -1,0 +1,4 @@
+# Python 3.11+ required.
+# This project currently uses only the Python standard library.
+# Keeping this file allows users to run:
+#   pip install -r requirements.txt

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "updated": "2026-04-22",
+  "preset": "gpt",
+  "apiStyle": "openai",
+  "model": "gpt-5.4-mini",
+  "baseUrl": "https://api.openai.com/v1",
+  "apiKey": "",
+  "timeoutSeconds": 45,
+  "temperature": 0.2,
+  "maxOutputTokens": 1200,
+  "anthropicVersion": "2023-06-01",
+  "customHeaders": {}
+}

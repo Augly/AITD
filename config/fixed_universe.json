@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "updated": "2026-04-22",
+  "description": "Fixed futures symbol universe for the open-source trading-agent build. Edit this list to change what the agent reviews.",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "SUIUSDT",
+    "DOGEUSDT",
+    "1000PEPEUSDT",
+    "ENAUSDT",
+    "WIFUSDT",
+    "ARKMUSDT",
+    "BLURUSDT",
+    "API3USDT",
+    "ZECUSDT",
+    "ONDOUSDT",
+    "ARBUSDT",
+    "LINKUSDT",
+    "AAVEUSDT",
+    "CRVUSDT",
+    "FETUSDT",
+    "PENDLEUSDT",
+    "TIAUSDT"
+  ],
+  "dynamicSource": {
+    "enabled": false,
+    "functionName": "load_candidate_symbols",
+    "functionFile": "config/candidate_source.py"
+  }
+}

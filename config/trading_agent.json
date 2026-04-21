@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "updated": "2026-04-22",
+  "description": "Python-only local trading agent settings.",
+  "mode": "paper",
+  "activeExchange": "binance",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8788
+  },
+  "decisionIntervalMinutes": 15,
+  "initialCapitalUsd": 1000,
+  "maxNewPositionsPerCycle": 1,
+  "maxOpenPositions": 4,
+  "maxPositionNotionalUsd": 150,
+  "maxGrossExposurePct": 100,
+  "maxAccountDrawdownPct": 20,
+  "riskPerTradePct": 2.5,
+  "minConfidence": 60,
+  "paperFeesBps": 4,
+  "allowShorts": true,
+  "paperTrading": {
+    "enabled": false
+  },
+  "liveTrading": {
+    "enabled": false
+  },
+  "liveExecution": {
+    "configPath": "config/live_trading.json",
+    "useExchangeProtectionOrders": true,
+    "note": "Only enable live routing after paper verification, exchange API setup, and tiny-size dry-run validation."
+  }
+}
