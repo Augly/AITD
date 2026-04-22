@@ -119,6 +119,7 @@ http://127.0.0.1:8788/trader.html
 ## 联系方式
 
 - X: [@ywa_ywa_ywa](https://x.com/ywa_ywa_ywa)
+- 欢迎交易所、LLM模型等联系，有很多测试的工作需要大家一起努力
 
 ## 版权与使用
 
