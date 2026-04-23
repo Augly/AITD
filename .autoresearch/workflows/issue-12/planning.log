@@ -1,0 +1,86 @@
+分析完成。在 `run_trading_cycle` 中 `summarize_account` 被调用了 **5 次**，在 `summarize_trading_state` 中调用了 **3 次**。每次调用都遍历全部 positions/trades 计算汇总数据。
+
+以下是子任务拆分：
+
+---
+
+**T-001: 提取账户摘要缓存类**
+- 创建 `AccountSummaryCache` 类，封装 `book + settings → summary` 的缓存逻辑
+- 缓存键基于 book 的 `openPositions`、`closedTrades`、`openOrders` 等可变状态的指纹（如 hash）
+- 提供 `get_or_compute(book, settings, compute_fn)` 接口
+
+**T-002: 在 run_trading_cycle 中接入缓存**
+- 将 `run_trading_cycle` 中的 5 次 `summarize_account` 调用替换为缓存版本
+- 确保在 book 状态变化（如 close_position、reduce_position、open_paper_position、sync_live_book 后）缓存失效或更新
+
+**T-003: 在 summarize_trading_state 中接入缓存**
+- 将 `summarize_trading_state` 中的 3 次 `summarize_account` 调用替换为缓存版本
+- 该函数为只读操作，可直接使用缓存
+
+**T-004: 编写缓存逻辑单元测试**
+- 测试缓存命中场景（相同 book 多次调用返回同一对象/值）
+- 测试缓存失效场景（book 状态变化后重新计算）
+- 测试缓存与原始 `summarize_account` 结果一致性
+
+```json
+{
+  "issueNumber": 12,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "提取账户摘要缓存类",
+      "description": "创建 AccountSummaryCache 类，封装 book + settings → summary 的缓存逻辑。缓存键基于 book 的可变状态指纹（openPositions、closedTrades、openOrders、exchangeClosedTrades 等关键字段的哈希值）。提供 get_or_compute(book, settings, compute_fn) 接口，compute_fn 为实际的 summarize_account 函数。",
+      "acceptanceCriteria": [
+        "AccountSummaryCache 类存在于 backend/engine_core.py 或独立模块中",
+        "缓存键能正确反映 book 状态变化",
+        "接口设计简洁，便于后续替换现有调用",
+        "通过类型检查"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "在 run_trading_cycle 中接入缓存",
+      "description": "将 run_trading_cycle 中的 5 次 summarize_account 调用替换为 AccountSummaryCache 版本。需要识别 book 状态变化点（close_position、reduce_position、open_paper_position、sync_live_book、apply_protection_hits 等）并确保缓存正确失效。",
+      "acceptanceCriteria": [
+        "run_trading_cycle 中所有 summarize_account 调用都经过缓存",
+        "book 状态变化后缓存正确失效并重新计算",
+        "功能行为与修改前完全一致",
+        "相关测试通过"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "在 summarize_trading_state 中接入缓存",
+      "description": "将 summarize_trading_state 中的 3 次 summarize_account 调用替换为 AccountSummaryCache 版本。summarize_trading_state 是只读操作，可直接复用缓存逻辑。",
+      "acceptanceCriteria": [
+        "summarize_trading_state 中所有 summarize_account 调用都经过缓存",
+        "返回结果与修改前完全一致",
+        "相关测试通过"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "编写缓存逻辑单元测试",
+      "description": "为 AccountSummaryCache 编写单元测试，覆盖缓存命中、缓存失效、状态变化检测等场景，确保缓存结果与直接调用 summarize_account 一致。",
+      "acceptanceCriteria": [
+        "缓存命中测试：相同 book 多次调用只计算一次",
+        "缓存失效测试：book 状态变化后重新计算",
+        "一致性测试：缓存结果与 summarize_account 原始结果一致",
+        "测试覆盖率 ≥ 70%"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
