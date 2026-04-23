@@ -393,7 +393,7 @@ def refresh_candidate_pool(exchange_id: str | None = None) -> dict[str, Any]:
     payload = {
         "version": 1,
         "runDate": current_run_date(),
-        "fetchedAt": __import__("datetime").datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        "fetchedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "source": resolved_source["mode"],
         "exchange": gateway.exchange_id,
         "universeSize": len(symbols),

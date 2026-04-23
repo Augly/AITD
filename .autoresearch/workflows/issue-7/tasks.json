@@ -1,0 +1,35 @@
+{
+  "issueNumber": 7,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "替换 utils.py 和 market.py 中的 datetime.utcnow()",
+      "description": "backend/utils.py:21 的 now_iso() 函数和 backend/market.py:396 的 fetchedAt 字段均使用了已废弃的 datetime.utcnow()。需要将导入语句补充 timezone，并将 utcnow() 替换为 now(timezone.utc)，同时保持 .replace(microsecond=0).isoformat() + 'Z' 的输出格式不变。",
+      "acceptanceCriteria": [
+        "utils.py 的 now_iso() 使用 datetime.now(timezone.utc) 替代 datetime.utcnow()",
+        "market.py 的 fetchedAt 使用 datetime.now(timezone.utc) 替代 datetime.utcnow()",
+        "两处文件的 import 语句正确引入 timezone",
+        "运行 pytest 相关测试通过",
+        "输出 ISO 8601 格式字符串保持 'Z' 后缀不变"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "替换 binance.py 和 server.py 中的 datetime.utcfromtimestamp()",
+      "description": "backend/exchanges/binance.py:485 和 backend/server.py:366 使用了已废弃的 datetime.utcfromtimestamp()。需要替换为 datetime.fromtimestamp(..., timezone.utc)，同时保持 .replace(microsecond=0).isoformat() + 'Z' 的输出格式不变。",
+      "acceptanceCriteria": [
+        "binance.py 的 closed_at 使用 datetime.fromtimestamp(closed_at_ms / 1000, timezone.utc) 替代",
+        "server.py 的 due 时间格式化使用 datetime.fromtimestamp(due_ts, timezone.utc) 替代",
+        "两处文件的 import 语句正确引入 timezone",
+        "运行 pytest 相关测试通过",
+        "输出 ISO 8601 格式字符串保持 'Z' 后缀不变"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

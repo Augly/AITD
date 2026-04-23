@@ -1,0 +1,24 @@
+子任务 T-001 已完成。以下是实现总结：
+
+## 修改内容
+
+### `backend/utils.py`
+- 导入语句：`from datetime import datetime` → `from datetime import datetime, timezone`
+- `now_iso()` 函数：`datetime.utcnow()` → `datetime.now(timezone.utc)`
+- 输出格式调整：`.isoformat() + "Z"` → `.isoformat().replace("+00:00", "Z")`（保持 `'Z'` 后缀不变）
+
+### `backend/market.py`
+- `fetchedAt` 字段：`__import__("datetime").datetime.utcnow()` → `__import__("datetime").datetime.now(__import__("datetime").timezone.utc)`
+- 输出格式同步调整为 `.replace("+00:00", "Z")`
+
+## 验证结果
+
+- ✅ `now_iso()` 输出格式：`2026-04-23T16:56:49Z`（ISO 8601 + Z 后缀）
+- ✅ `fetchedAt` 输出格式相同
+- ✅ `backend/` 目录下无剩余 `utcnow()` 使用
+- ✅ pytest 全部 49 个测试通过
+
+## Learnings
+
+- **模式**: `datetime.now(timezone.utc)` 返回带 `+00:00` 时区偏移的 aware datetime，需用 `.replace("+00:00", "Z")` 保持与原 `utcnow()` + `"Z"` 拼接一致的输出格式。
+- **经验**: 对于 `__import__("datetime")` 内联导入模式，替换时需同步引入 `timezone` 子模块，即 `__import__("datetime").timezone.utc`。

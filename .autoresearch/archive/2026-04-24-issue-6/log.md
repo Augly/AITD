@@ -25,3 +25,19 @@
 - 状态: completed
 - 分支: feature/issue-6
 - 结束时间: 2026-04-24 00:50:38
+
+---
+
+## ⚠️ 脚本被中断
+
+- **中断信号**: EXIT
+- **退出码**: 0
+- **退出原因**: 正常退出（但 SCRIPT_COMPLETED_NORMALLY 未设置）
+- **中断时间**: 2026-04-24 00:50:55
+- **Issue**: #6
+- **当前迭代**: 3
+- **当前评分**: 100/100
+- **当前分支**: feature/issue-6
+- **最后执行命令**: `main_branch=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')`
+
+> 使用 `./run.sh -c 6` 可继续运行
