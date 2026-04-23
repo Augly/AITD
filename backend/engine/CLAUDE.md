@@ -11,6 +11,7 @@
 - `executor.py` — 仓位执行（待拆分）
 - `prompt_builder.py` — Prompt 构建（待拆分）
 - `cycle.py` — 交易循环（待拆分）
+- `events.py` — EventBus 事件系统（已完成）
 
 ### 导入规则
 
@@ -23,6 +24,16 @@
 - `backend/engine/` 是 Python 包（含 `__init__.py`），`backend/engine_core.py` 是普通模块
 - Python 导入优先级：包 > 模块，因此不能同时存在 `engine.py` 和 `engine/` 目录
 - 状态函数（如 `normalize_position`）在 `state.py` 和 `engine_core.py` 中都有使用，修改时需同步检查
+
+### 事件系统 (EventBus)
+
+`backend/engine/events.py` 提供线程安全的发布/订阅事件总线：
+
+- **EventBus** 类：标准库实现，零外部依赖，使用 `threading.Lock` 保证线程安全
+- **事件类型常量**：覆盖交易循环 16 个主要阶段（`cycle.started`, `state.loaded`, `decision.made`, `position.opened`, `state.written` 等）
+- **API**: `on(event_type, handler)`, `off(event_type, handler)`, `emit(event_type, payload)`, `clear()`, `listener_count()`, `has_listener()`
+- **错误隔离**：单个 handler 异常不会中断其他 handler 或后续事件
+- **同步分发**：handler 按订阅顺序同步调用
 
 ### 接口设计原则
 

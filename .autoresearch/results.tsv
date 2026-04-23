@@ -10,3 +10,4 @@
 2026-04-24T04:13:12+08:00	14	P2: 消除 kline 解析逻辑重复	completed	3	false	100	100	feature/issue-14	
 2026-04-24T04:32:38+08:00	15	P2: 消除交易所缓存策略和 URL 构建代码重复	blocked	3	false	10	10	feature/issue-15	
 2026-04-24T05:11:13+08:00	16	P3: 添加 pytest 测试框架	completed	3	false	97	97	feature/issue-16	
+2026-04-24T05:29:15+08:00	17	P3: 引入事件系统解耦交易循环	completed	3	false	99	99	feature/issue-17	
