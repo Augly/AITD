@@ -23,3 +23,9 @@
 - `backend/engine/` 是 Python 包（含 `__init__.py`），`backend/engine_core.py` 是普通模块
 - Python 导入优先级：包 > 模块，因此不能同时存在 `engine.py` 和 `engine/` 目录
 - 状态函数（如 `normalize_position`）在 `state.py` 和 `engine_core.py` 中都有使用，修改时需同步检查
+
+### 接口设计原则
+
+- **Paper/Live 统一接口设计**: Live 模式函数通常比 Paper 模式多返回上下文数据（如 `live_status_payload`, `live_config`）。统一接口设计时需返回两者的并集。
+- **兼容性处理**: Paper 后端对 Live 专属的返回字段返回 `None`
+- **返回值示例**: `sync_book` → `(book, warnings, live_status_payload | None, live_config | None)`

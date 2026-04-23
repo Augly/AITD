@@ -1,0 +1,85 @@
+分析完成。Issue #11 的核心问题是：三个交易所网关（Binance、OKX、Bybit）直接 `from ..config import read_live_trading_config, read_network_settings`，违反了依赖倒置原则。修复方案是通过构造器注入配置和 HTTP 客户端依赖。
+
+以下是子任务拆分：
+
+```json
+{
+  "issueNumber": 11,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "重构 ExchangeGateway 基类，添加构造器注入接口",
+      "description": "修改 backend/exchanges/base.py 中的 ExchangeGateway 抽象基类，添加 __init__ 构造器，接受 config_provider 和 http_client 依赖注入参数。定义配置提供者和 HTTP 客户端的抽象接口（或 Protocol），为后续具体网关改造奠定契约基础。",
+      "acceptanceCriteria": [
+        "ExchangeGateway 基类新增 __init__ 构造器，接受 config_provider 和 network_settings_provider 参数",
+        "定义 ConfigProvider 和 NetworkSettingsProvider 的 Protocol 或抽象类型",
+        "现有抽象方法签名保持不变，确保向后兼容",
+        "backend/exchanges/base.py 不再直接导入 config 模块"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "改造 BinanceGateway 实现构造器注入",
+      "description": "修改 backend/exchanges/binance.py，移除 `from ..config import read_live_trading_config, read_network_settings` 的直接导入。改为通过构造器注入的 config_provider 和 network_settings_provider 获取配置。同步调整 _public_get_json、_signed_request_json、_sync_server_time_offset 等内部方法，使用注入的依赖替代直接函数调用。",
+      "acceptanceCriteria": [
+        "BinanceGateway 不再直接导入 read_live_trading_config 和 read_network_settings",
+        "构造器通过父类 __init__ 接收注入的依赖",
+        "所有原先调用 read_network_settings() 的地方改为使用注入的 provider",
+        "live_execution_status 方法中默认读取配置的逻辑改为使用注入的 provider",
+        "BinanceGateway 的单元测试通过（如有）"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "改造 OkxGateway 实现构造器注入",
+      "description": "修改 backend/exchanges/okx.py，移除 `from ..config import read_live_trading_config, read_network_settings` 的直接导入。改为通过构造器注入的依赖获取配置。同步调整 _public_get_data、_signed_request_json 等内部方法。",
+      "acceptanceCriteria": [
+        "OkxGateway 不再直接导入 read_live_trading_config 和 read_network_settings",
+        "构造器通过父类 __init__ 接收注入的依赖",
+        "所有原先调用 read_network_settings() 的地方改为使用注入的 provider",
+        "live_execution_status 方法中默认读取配置的逻辑改为使用注入的 provider",
+        "OkxGateway 的单元测试通过（如有）"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "改造 BybitGateway 实现构造器注入",
+      "description": "修改 backend/exchanges/bybit.py，移除 `from ..config import read_live_trading_config, read_network_settings` 的直接导入。改为通过构造器注入的依赖获取配置。同步调整 _public_get_result 等内部方法。",
+      "acceptanceCriteria": [
+        "BybitGateway 不再直接导入 read_live_trading_config 和 read_network_settings",
+        "构造器通过父类 __init__ 接收注入的依赖",
+        "所有原先调用 read_network_settings() 的地方改为使用注入的 provider",
+        "live_execution_status 方法中默认读取配置的逻辑改为使用注入的 provider",
+        "BybitGateway 的单元测试通过（如有）"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-005",
+      "title": "更新网关注册工厂和调用方，适配构造器注入",
+      "description": "修改 backend/exchanges/__init__.py 中的 _ensure_gateways、get_exchange_gateway、get_live_exchange_gateway 等工厂函数，在创建网关实例时传入配置提供者和网络设置提供者。同步检查并更新 backend/live_trading.py 等调用方，确保它们通过工厂函数正确获取已注入依赖的网关实例。",
+      "acceptanceCriteria": [
+        "_ensure_gateways 创建网关实例时传入注入的依赖",
+        "get_live_exchange_gateway 不再直接调用 read_live_trading_config，而是通过注入的 provider",
+        "backend/live_trading.py 中直接导入 read_live_trading_config 的代码被移除或调整",
+        "所有现有调用方无需修改即可正常工作（通过工厂函数适配）",
+        "项目测试全部通过"
+      ],
+      "priority": 5,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```

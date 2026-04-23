@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
 
-from ..config import read_live_trading_config, read_network_settings
 from ..http_client import cached_get_json, request_json
 from ..utils import clamp, now_iso, num
 from .base import ExchangeGateway
@@ -101,7 +100,6 @@ class OkxGateway(ExchangeGateway):
         ttl_seconds: int,
         max_stale_seconds: int,
     ) -> Any:
-        network_settings = read_network_settings()
         url = self._query(self.public_base_url, endpoint, params)
         payload = cached_get_json(
             url,
@@ -109,7 +107,7 @@ class OkxGateway(ExchangeGateway):
             ttl_seconds=ttl_seconds,
             max_stale_seconds=max_stale_seconds,
             timeout_seconds=45,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
         return self._okx_data(payload, endpoint=endpoint)
 
@@ -125,7 +123,6 @@ class OkxGateway(ExchangeGateway):
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | list[dict[str, Any]] | None = None,
     ) -> Any:
-        network_settings = read_network_settings()
         method_upper = method.upper()
         query_string = self._query_string(params)
         request_path = endpoint if not query_string else f"{endpoint}?{query_string}"
@@ -153,7 +150,7 @@ class OkxGateway(ExchangeGateway):
             headers=headers,
             payload=body_text if body is not None else None,
             timeout_seconds=45,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
         return self._okx_data(payload, endpoint=endpoint)
 
@@ -364,7 +361,7 @@ class OkxGateway(ExchangeGateway):
         live_config: dict[str, Any] | None = None,
         trading_settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        live_config = live_config or read_live_trading_config()
+        live_config = live_config or self._get_live_config()
         issues = []
         if not live_config.get("apiKey"):
             issues.append("Live trading API key is missing.")
