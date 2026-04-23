@@ -1,0 +1,55 @@
+{
+  "issueNumber": 14,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "提取并统一 parse_klines 公共函数到 utils.py",
+      "description": "在 backend/utils.py 中创建统一的 parse_klines() 函数，支持参数化配置：reverse（是否反转行顺序）、quote_volume_index（quoteVolume 字段索引）、close_time_index（closeTime 字段索引，None 时回退到 openTime）、min_length（最小行长度）。该函数需要兼容现有 3 种变体：Binance（不反转，closeTime 在索引 6，quoteVolume 在索引 7，最小长度 5）、Bybit（反转，closeTime 回退 openTime，quoteVolume 在索引 6，最小长度 7）、OKX（反转，closeTime 回退 openTime，quoteVolume 在索引 7 且回退索引 6，最小长度 8）。同时保留原有的 close_value 为 None 时跳过该行的逻辑。",
+      "acceptanceCriteria": [
+        "backend/utils.py 中存在 parse_klines 函数，签名支持上述参数",
+        "函数正确处理 reverse=True/False 的情况",
+        "函数正确处理 close_time_index=None 时回退到 openTime 的情况",
+        "函数正确处理 quoteVolume 回退逻辑（OKX 的 row[7] 或 row[6]）",
+        "函数保持原有 close_value 为 None 时跳过行的行为",
+        "函数保持原有 int(num(row[0]) or 0) 等类型转换行为"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "替换各交易所 gateway 中的内联 kline 解析逻辑",
+      "description": "将 backend/exchanges/binance.py、bybit.py、okx.py 以及 backend/market.py 中的内联 kline 解析逻辑替换为调用 utils.py 中的统一 parse_klines() 函数。每个调用点需要传入正确的参数以保留原有行为。删除被替换的内联代码和旧的 _parse_klines 方法。",
+      "acceptanceCriteria": [
+        "binance.py 调用 parse_klines(rows, close_time_index=6, min_length=5)",
+        "bybit.py 调用 parse_klines(rows, reverse=True, quote_volume_index=6, close_time_index=None, min_length=7)",
+        "okx.py 调用 parse_klines(rows, reverse=True, quote_volume_index=7, close_time_index=None, min_length=8)",
+        "market.py 调用统一的 parse_klines 替代原有实现",
+        "所有旧的 _parse_klines 方法和内联解析代码已删除",
+        "代码行为与替换前完全一致"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "为 parse_klines 添加单元测试",
+      "description": "为 utils.py 中的 parse_klines 函数编写 pytest 单元测试，覆盖 3 种交易所的数据格式（Binance、Bybit、OKX），包括正常解析、reverse 行为、close_time_index=None 回退、quoteVolume 回退、close_value 为 None 时跳过、行长度不足时跳过等场景。",
+      "acceptanceCriteria": [
+        "存在 test_parse_klines.py 或类似测试文件",
+        "测试覆盖 Binance 格式（不反转，8 列，closeTime 在索引 6）",
+        "测试覆盖 Bybit 格式（反转，7 列，quoteVolume 在索引 6）",
+        "测试覆盖 OKX 格式（反转，8+ 列，quoteVolume 回退）",
+        "测试覆盖 reverse=True 时行顺序正确",
+        "测试覆盖 close_value 为 None 时该行被跳过",
+        "测试覆盖行长度不足时该行被跳过",
+        "所有测试通过"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
