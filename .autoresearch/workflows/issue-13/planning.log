@@ -1,0 +1,40 @@
+分析完成。当前代码中还有两处使用废弃的 `utcfromtimestamp()` API：
+
+1. `backend/server.py:366` - `datetime.utcfromtimestamp(due_ts)`
+2. `backend/exchanges/binance.py:489` - `datetime.utcfromtimestamp(closed_at_ms / 1000)`
+
+`utils.py` 的 `utcnow()` 已在之前的 issue-7 中修复。
+
+```json
+{
+  "issueNumber": 13,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "替换 server.py 中的 datetime.utcfromtimestamp()",
+      "description": "backend/server.py:366 使用了 __import__('datetime').datetime.utcfromtimestamp(due_ts)，该 API 在 Python 3.12+ 已废弃。需要替换为 datetime.fromtimestamp(due_ts, tz=timezone.utc)，并保持 .replace(microsecond=0).isoformat() + 'Z' 的输出格式不变。注意该文件使用 __import__('datetime') 动态导入方式，需相应调整导入逻辑。",
+      "acceptanceCriteria": [
+        "server.py:366 不再使用 utcfromtimestamp()",
+        "替换后的代码输出格式与原代码一致（ISO 8601 + 'Z'）",
+        "相关功能正常（调度扫描时间计算）"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "替换 binance.py 中的 datetime.utcfromtimestamp()",
+      "description": "backend/exchanges/binance.py:489 使用了 __import__('datetime').datetime.utcfromtimestamp(closed_at_ms / 1000)，该 API 在 Python 3.12+ 已废弃。需要替换为 datetime.fromtimestamp(closed_at_ms / 1000, tz=timezone.utc)，并保持 .replace(microsecond=0).isoformat() + 'Z' 的输出格式不变。",
+      "acceptanceCriteria": [
+        "binance.py:489 不再使用 utcfromtimestamp()",
+        "替换后的代码输出格式与原代码一致（ISO 8601 + 'Z'）",
+        "相关功能正常（交易关闭时间格式化）"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```

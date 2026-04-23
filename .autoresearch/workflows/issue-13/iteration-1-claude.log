@@ -1,0 +1,16 @@
+子任务 T-001 已完成。
+
+**改动总结：**
+
+1. **新增导入** (`backend/server.py:7-8`): 从 `datetime` 模块导入 `datetime` 和 `timezone`
+2. **替换废弃 API** (`backend/server.py:367`): 将 `__import__('datetime').datetime.utcfromtimestamp(due_ts).replace(microsecond=0).isoformat() + "Z"` 替换为 `datetime.fromtimestamp(due_ts, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")`
+
+**验证结果：**
+- ✅ `utcfromtimestamp()` 已完全移除（全局搜索无匹配）
+- ✅ 输出格式与原代码一致（ISO 8601 + 'Z'）
+- ✅ Python 语法检查通过
+
+## Learnings
+
+- **Python 3.12+ 废弃 API 迁移**: `datetime.utcfromtimestamp()` → `datetime.fromtimestamp(tz=timezone.utc)`，注意 `isoformat()` 会输出 `+00:00` 而非 `Z`，需额外替换
+- **动态导入清理**: 原代码使用 `__import__('datetime')` 动态导入，替换为静态导入后代码更清晰且类型检查友好

@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 from collections import deque
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -363,7 +364,7 @@ class AppRuntime:
             due_ts = start_ts
         else:
             due_ts = end_ts
-        return __import__("datetime").datetime.utcfromtimestamp(due_ts).replace(microsecond=0).isoformat() + "Z"
+        return datetime.fromtimestamp(due_ts, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     def _maybe_start_scheduled_scan(self) -> None:
         settings = read_dashboard_settings()
