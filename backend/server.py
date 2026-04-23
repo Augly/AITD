@@ -49,6 +49,12 @@ from .engine import (
 from .market import read_latest_scan, refresh_candidate_pool
 from .market import test_candidate_source
 from .utils import DASHBOARD_DIR, now_iso
+from .auth import (
+    get_auth_error_response,
+    is_auth_enabled,
+    validate_api_key,
+    HEADER_NAME,
+)
 
 
 SCHEDULE_TRIGGER_WINDOW_SECONDS = 20
@@ -415,6 +421,17 @@ class AppRuntime:
         self.record_log("INFO", "自动调度器已启动。")
 
 
+def _is_api_path(path: str) -> bool:
+    return path.startswith("/api/")
+
+
+def _check_api_auth(handler: BaseHTTPRequestHandler) -> bool:
+    if not is_auth_enabled():
+        return True
+    key = handler.headers.get(HEADER_NAME) or ""
+    return validate_api_key(key)
+
+
 def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     length = int(handler.headers.get("content-length") or 0)
     if length <= 0:
@@ -474,7 +491,17 @@ class TradingAgentHandler(BaseHTTPRequestHandler):
 
     def _handle(self, method: str) -> None:
         parsed = urlparse(self.path)
+        if _is_api_path(parsed.path) and parsed.path != "/api/auth/status":
+            if not _check_api_auth(self):
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", HEADER_NAME)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(json.dumps(get_auth_error_response()).encode("utf-8"))
+                return
         try:
+            if method == "GET" and parsed.path == "/api/auth/status":
+                return _json_response(self, {"enabled": is_auth_enabled()})
             if method == "GET" and parsed.path == "/api/latest":
                 return _json_response(self, self.runtime.api_latest())
             if method == "GET" and parsed.path == "/api/opportunities":
