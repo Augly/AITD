@@ -7,3 +7,4 @@
 2026-04-24T06:26:48+08:00	1	P0: 交易状态文件并发读写缺少锁保护	completed	3	false	90	90	feature/issue-1	
 2026-04-24T06:40:57+08:00	2	P0: 交易状态文件并发读写缺少锁保护	completed	3	false	96	96	feature/issue-2	
 2026-04-24T07:05:51+08:00	3	P1: server.py 路由重构为装饰器模式	completed	3	false	95	95	feature/issue-3	
+2026-04-24T07:36:13+08:00	4	P2: 修复 N+1 查询模式 - 批量获取行情数据	completed	3	false	100	100	feature/issue-4	

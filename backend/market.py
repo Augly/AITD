@@ -632,6 +632,31 @@ def fetch_candidate_live_context(
     }
 
 
+def fetch_candidates_live_context(
+    symbols: list[str],
+    prompt_kline_feeds: dict[str, Any] | None = None,
+    exchange_id: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    gateway = get_active_exchange_gateway(exchange_id)
+    tickers = gateway.fetch_all_tickers_24h()
+    premium_rows = gateway.fetch_all_premium_index()
+    ticker_by_symbol = {str(item.get("symbol") or "").upper(): item for item in (tickers or [])}
+    premium_by_symbol = {str(item.get("symbol") or "").upper(): item for item in (premium_rows or [])}
+    feeds = normalize_prompt_kline_feeds(prompt_kline_feeds)
+    result: dict[str, dict[str, Any]] = {}
+    for symbol in symbols:
+        upper_symbol = symbol.upper()
+        klines_by_interval = _fetch_prompt_kline_map(symbol, feeds, exchange_id)
+        result[symbol] = {
+            "symbol": upper_symbol,
+            "ticker24h": ticker_by_symbol.get(upper_symbol, {}),
+            "premium": premium_by_symbol.get(upper_symbol, {}),
+            "promptKlineFeeds": feeds,
+            "klinesByInterval": klines_by_interval,
+        }
+    return result
+
+
 def fetch_market_backdrop(
     prompt_kline_feeds: dict[str, Any] | None = None,
     exchange_id: str | None = None,

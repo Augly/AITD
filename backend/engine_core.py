@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from copy import deepcopy
 from typing import Any
 
@@ -39,6 +39,7 @@ from .market import (
     build_candidate_snapshot,
     candidate_universe_from_scan,
     fetch_candidate_live_context,
+    fetch_candidates_live_context,
     fetch_market_backdrop,
     read_latest_scan,
     refresh_candidate_pool,
@@ -865,19 +866,14 @@ def _fetch_live_contexts_for_exchange(
     prompt_kline_feeds: dict[str, Any],
     exchange_id: str | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    live_by_symbol: dict[str, dict[str, Any]] = {}
+    try:
+        live_by_symbol = fetch_candidates_live_context(symbols, prompt_kline_feeds, exchange_id)
+    except Exception as error:
+        return {}, [str(error)]
     warnings: list[str] = []
-    with ThreadPoolExecutor(max_workers=min(4, max(1, len(symbols)))) as executor:
-        futures = {
-            executor.submit(fetch_candidate_live_context, symbol, prompt_kline_feeds, exchange_id): symbol
-            for symbol in symbols
-        }
-        for future in as_completed(futures):
-            symbol = futures[future]
-            try:
-                live_by_symbol[symbol] = future.result()
-            except Exception as error:
-                warnings.append(f"{symbol}: {error}")
+    for symbol in symbols:
+        if symbol not in live_by_symbol:
+            warnings.append(f"{symbol}: missing live context")
     return live_by_symbol, warnings
 
 
