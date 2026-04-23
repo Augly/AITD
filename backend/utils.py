@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from hashlib import sha1
 from pathlib import Path
@@ -31,9 +32,14 @@ def read_json(path: Path, default: Any = None) -> Any:
         return default
 
 
+SENSITIVE_CONFIG_FILES = {"live_trading.json", "llm_provider.json"}
+
+
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if path.name in SENSITIVE_CONFIG_FILES:
+        os.chmod(path, 0o600)
 
 
 def num(value: Any) -> float | None:

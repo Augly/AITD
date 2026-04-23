@@ -1,0 +1,68 @@
+现在我已经充分了解了代码结构。让我分析 Issue #6 并拆分子任务。
+
+## Issue #6 分析
+
+**问题 1**: `live_trading.json` 和 `llm_provider.json` 中 API 密钥以明文存储，且文件权限未限制
+**问题 2**: `server.py` 第 710 行错误处理返回完整错误字符串 `str(error)`，可能泄露 URL、API 密钥等敏感信息
+
+**涉及的关键代码位置**:
+- `backend/config.py`: `write_json()` 调用（需检查 utils.py 中的实现），`LIVE_TRADING_PATH` 和 `LLM_PROVIDER_PATH` 文件读写
+- `backend/server.py:710`: `_handle()` 方法的异常处理，返回 `{"error": str(error)}`
+- `backend/utils.py`: `write_json()` 函数实现文件写入
+
+**修复方案**:
+1. 写入密钥配置文件时设置 600 权限（仅所有者可读写）
+2. API 返回给前端时，对 `apiKey`/`apiSecret`/`apiPassphrase` 做脱敏处理
+3. 错误信息返回时过滤敏感内容
+
+---
+
+```json
+{
+  "issueNumber": 6,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "API 密钥配置文件设置 600 权限",
+      "description": "修改 write_json() 函数，在写入包含敏感信息的配置文件（live_trading.json 和 llm_provider.json）时，设置文件权限为 0o600（仅所有者可读写）。需要在 backend/utils.py 中实现或修改 write_json 函数，使其支持写入后设置权限。同时需要处理文件已存在时的权限修正。",
+      "acceptanceCriteria": [
+        "write_json 写入 live_trading.json 后文件权限为 0o600",
+        "write_json 写入 llm_provider.json 后文件权限为 0o600",
+        "其他普通配置文件（如 dashboard_settings.json）权限不受影响",
+        "已有密钥文件的权限在下次写入时被修正为 0o600"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "API 响应中密钥字段脱敏处理",
+      "description": "在 server.py 的 API 响应中，对返回给前端的配置数据中的敏感字段（apiKey、apiSecret、apiPassphrase）进行脱敏处理。当这些字段有值时，返回掩码形式（如 'sk-****xxxx' 只显示前 3 位和后 4 位，中间用 * 替代）。涉及的端点包括：GET /api/trading/live-config、GET /api/trading/provider。脱敏逻辑应封装为独立函数，便于复用和测试。",
+      "acceptanceCriteria": [
+        "GET /api/trading/live-config 返回的 apiKey/apiSecret/apiPassphrase 已脱敏",
+        "GET /api/trading/provider 返回的 apiKey 已脱敏",
+        "空字符串的密钥字段保持空字符串，不做脱敏",
+        "脱敏函数有对应的单元测试"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "错误响应中过滤敏感信息",
+      "description": "修改 server.py 第 710 行的异常处理逻辑，避免将原始异常信息直接返回给前端。实现一个安全的错误处理函数，过滤错误消息中可能包含的敏感信息（如 API 密钥、URL 中的凭证参数等），返回通用的、安全的错误描述。同时确保服务端日志仍记录完整错误信息以便调试。",
+      "acceptanceCriteria": [
+        "异常时前端收到的错误响应不包含原始异常详情",
+        "错误响应中不包含 API 密钥、URL 等敏感信息",
+        "服务端日志仍记录完整的原始错误信息",
+        "错误处理函数有对应的单元测试"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
