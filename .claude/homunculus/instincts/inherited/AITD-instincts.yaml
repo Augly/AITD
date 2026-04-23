@@ -1,0 +1,337 @@
+# Instincts generated from https://github.com/Augly/AITD
+# Generated: 2026-04-23T15:47:27.298Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: AITD-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Commit Length
+
+## Action
+
+Keep commit messages concise (~35 characters)
+
+## Evidence
+
+- Average commit message length: 35 chars
+- Based on 2 commits
+
+---
+id: AITD-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: AITD-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: AITD-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: AITD-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: AITD-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/Augly/AITD
+---
+
+# AITD Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: aitd-instinct-file-naming
+trigger: "When creating a new Python file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct File Naming
+
+## Action
+
+Name the file using snake_case format
+
+## Evidence
+
+- Pattern in namingConventions.files
+
+---
+id: aitd-instinct-function-naming
+trigger: "When defining a new function in Python"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Function Naming
+
+## Action
+
+Use camelCase for the function name
+
+## Evidence
+
+- Pattern in namingConventions.functions
+
+---
+id: aitd-instinct-class-naming
+trigger: "When defining a new class in Python"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Class Naming
+
+## Action
+
+Use PascalCase for the class name
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: aitd-instinct-constant-naming
+trigger: "When defining a constant in Python"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for the constant name
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: aitd-instinct-import-style
+trigger: "When importing modules in Python"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Import Style
+
+## Action
+
+Use relative import statements
+
+## Evidence
+
+- Pattern in importStyle
+
+---
+id: aitd-instinct-export-style
+trigger: "When exporting functions or classes from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle
+
+---
+id: aitd-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Test Location
+
+## Action
+
+Place test files in the separate 'tests' folder
+
+## Evidence
+
+- Pattern in architecture.folderStructure.testLocation
+- Common folder: tests
+
+---
+id: aitd-instinct-test-pattern
+trigger: "When naming a test file"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Test Pattern
+
+## Action
+
+Use the '*.test.ts' pattern for test file names
+
+## Evidence
+
+- Pattern in testing.filePattern
+
+---
+id: aitd-instinct-test-type
+trigger: "When writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Test Type
+
+## Action
+
+Write unit tests
+
+## Evidence
+
+- Pattern in testing.testTypes
+
+---
+id: aitd-instinct-commit-prefix
+trigger: "When making a commit that adds a feature"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Commit Prefix
+
+## Action
+
+Prefix the commit message with 'feat:'
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Seen in commit: 'feat: implement issue #5 - P0: API 服务器缺少认证机制'
+
+---
+id: aitd-instinct-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: Augly/AITD
+---
+
+# Aitd Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 35 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength
+
