@@ -3,7 +3,81 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
-from typing import Any
+from typing import Any, Callable
+
+
+class AccountSummaryCache:
+    """Cache for summarize_account results, invalidated when book state changes."""
+
+    def __init__(self) -> None:
+        self._cache: dict[str, Any] | None = None
+        self._key: str | None = None
+
+    def _compute_key(self, book: dict[str, Any], settings: dict[str, Any]) -> str:
+        """Build a cache key from book mutable state and relevant settings."""
+        open_positions = book.get("openPositions", [])
+        closed_trades = book.get("closedTrades", [])
+        open_orders = book.get("openOrders", [])
+        exchange_closed_trades = book.get("exchangeClosedTrades", [])
+
+        # Use lengths as a fast fingerprint; include key scalar fields
+        # that affect summarize_account output.
+        parts = [
+            str(len(open_positions)),
+            str(len(closed_trades)),
+            str(len(open_orders)),
+            str(len(exchange_closed_trades)),
+            str(book.get("highWatermarkEquity")),
+            str(book.get("exchangeEquityUsd")),
+            str(book.get("circuitBreakerTripped")),
+            str(book.get("lastDecisionAt")),
+            str(book.get("exchangeWalletBalanceUsd")),
+            str(book.get("exchangeUnrealizedPnlUsd")),
+            str(book.get("exchangeNetCashflowUsd")),
+            str(book.get("exchangeIncomeRealizedPnlUsd")),
+            str(book.get("exchangeFundingFeeUsd")),
+            str(book.get("exchangeCommissionUsd")),
+            str(book.get("exchangeOtherIncomeUsd")),
+            str(book.get("exchangeAccountingUpdatedAt")),
+            str(settings.get("initialCapitalUsd")),
+            str(settings.get("maxGrossExposurePct")),
+            str(settings.get("maxAccountDrawdownPct")),
+            str(settings.get("mode")),
+        ]
+
+        # Include position IDs and quantities for fine-grained change detection
+        # (positions may change size without length changing)
+        for pos in open_positions:
+            parts.append(str(pos.get("id")))
+            parts.append(str(pos.get("quantity")))
+            parts.append(str(pos.get("entryPrice")))
+            parts.append(str(pos.get("notionalUsd")))
+            parts.append(str(pos.get("lastMarkPrice")))
+
+        for trade in closed_trades:
+            parts.append(str(trade.get("id")))
+            parts.append(str(trade.get("realizedPnl")))
+
+        return "|".join(parts)
+
+    def get_or_compute(
+        self,
+        book: dict[str, Any],
+        settings: dict[str, Any],
+        compute_fn: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Return cached summary if book state hasn't changed; otherwise compute and cache."""
+        key = self._compute_key(book, settings)
+        if self._key == key and self._cache is not None:
+            return self._cache
+        self._cache = compute_fn(book, settings)
+        self._key = key
+        return self._cache
+
+    def invalidate(self) -> None:
+        """Explicitly clear the cache."""
+        self._cache = None
+        self._key = None
 
 from .config import (
     read_fixed_universe,
