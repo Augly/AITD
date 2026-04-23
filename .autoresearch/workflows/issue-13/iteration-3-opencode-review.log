@@ -1,0 +1,68 @@
+[0m
+> build · ark-code-latest
+[0m
+我来审核这个子任务的实现。首先查看相关代码。
+[0m→ [0mRead backend/server.py[90m [offset=360, limit=20][0m
+[0m→ [0mRead backend/server.py[90m [offset=1, limit=30][0m
+[0m✱ [0mGrep "utcfromtimestamp|utcnow"[90m in . · 3 matches[0m
+现在检查导入部分和是否还有其他废弃 API 的使用：
+[0m✱ [0mGlob "**/test*.py"[90m in backend · 0 matches[0m
+[0m→ [0mRead backend/exchanges/binance.py[90m [offset=485, limit=10][0m
+发现 binance.py 中还有一处需要修复。让我查看相关测试文件并验证实现：
+检查 binance.py 的导入：
+[0m→ [0mRead backend/exchanges/binance.py[90m [offset=1, limit=20][0m
+## 审核报告
+
+### Issue
+- 编号: #13
+- 迭代次数: 3
+
+### 总体评价
+**评分: 95/100**
+
+### 严重问题 (必须修复)
+无
+
+### 一般问题 (建议修复)
+无
+
+### 建议改进 (可选)
+- binance.py:489 还存在一处 `__import__("datetime").datetime.utcfromtimestamp()` 需要替换，这属于后续子任务范围
+
+### 审核结论
+- [x] 通过
+
+---
+
+## 审核详情
+
+### 1. 正确性 (100/100) ✅
+- ✅ server.py:367 已正确替换废弃的 `utcfromtimestamp()` 为 `datetime.fromtimestamp(due_ts, tz=timezone.utc)`
+- ✅ 输出格式保持一致：使用 `.replace("+00:00", "Z")` 确保 ISO 8601 格式与原代码输出相同
+- ✅ 导入逻辑正确：已将动态导入替换为静态导入 `from datetime import datetime, timezone`
+- ✅ 调度扫描时间计算功能不受影响
+
+### 2. 测试质量 (100/100) ✅
+测试质量维度已豁免 - 项目未提供单元测试框架，此为纯 API 替换无业务逻辑变更
+
+### 3. 代码质量 (85/100) ✅
+- ✅ 命名清晰，符合项目规范
+- ✅ 静态导入替代动态导入，代码更清晰且类型检查友好
+- ⚠️ 建议：后续可考虑统一项目中所有 datetime 相关导入风格
+
+### 4. 安全性 (100/100) ✅
+- ✅ 无输入验证问题
+- ✅ 无注入风险
+- ✅ 无敏感信息泄露
+
+### 5. 性能 (100/100) ✅
+- ✅ 无性能问题
+- ✅ 无不必要的内存分配
+
+---
+
+## Learnings
+
+- **模式**: Python 3.12+ datetime API 迁移模式：`utcfromtimestamp(ts)` → `fromtimestamp(ts, tz=timezone.utc)`，需额外处理 `isoformat()` 输出的 `+00:00` → `Z` 替换
+- **踩坑**: 使用动态导入 `__import__('datetime')` 时，替换为静态导入需要同时更新导入语句
+- **经验**: 项目中多处使用废弃 datetime API，建议一次性全局搜索替换完成
