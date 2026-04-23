@@ -4,11 +4,14 @@ import json
 import math
 import os
 import re
+import tempfile
 from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
+
+from filelock import FileLock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +43,38 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if path.name in SENSITIVE_CONFIG_FILES:
         os.chmod(path, 0o600)
+
+
+def _lock_path_for(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".lock")
+
+
+def read_json_locked(path: Path, default: Any = None) -> Any:
+    lock = FileLock(str(_lock_path_for(path)))
+    try:
+        with lock:
+            return read_json(path, default)
+    except Exception:
+        return default
+
+
+def write_json_locked(path: Path, payload: Any) -> None:
+    lock = FileLock(str(_lock_path_for(path)))
+    with lock:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(
+            dir=path.parent, prefix=path.name + ".tmp", suffix=".json"
+        )
+        try:
+            os.write(fd, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, path)
+        if path.name in SENSITIVE_CONFIG_FILES:
+            os.chmod(path, 0o600)
+        else:
+            os.chmod(path, 0o666 & ~os.umask(0))
 
 
 def num(value: Any) -> float | None:
