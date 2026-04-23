@@ -6,11 +6,10 @@ import socket
 import threading
 import time
 from collections import deque
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 from .config import (
     DEFAULT_PROMPT_SETTINGS,

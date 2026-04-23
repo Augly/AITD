@@ -472,7 +472,7 @@
                 <button id="saveDynamicUniverseBtn" type="button">保存动态候选池</button>
                 <button id="testUniverseBtn" type="button" class="secondary-button">测试获取</button>
               </div>
-              <p class="status-line">函数需要定义 <code>load_candidate_symbols(context)</code>，并返回 <code>list[str]</code>。</p>
+              <p class="status-line">函数需要定义 <code>load_candidate_symbols(context)</code>，并返回 <code>list[str]</code>。可直接使用 <code>context["manual_symbols"]</code>、<code>context["latest_scan_path"]</code>、<code>context["project_root"]</code> 等字段。</p>
             </div>
             <div class="prompt-test-block">
               <div class="section-heading">

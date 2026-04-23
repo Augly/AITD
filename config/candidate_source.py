@@ -4,11 +4,19 @@ import json
 
 def load_candidate_symbols(context):
     """Return a list of futures symbols to scan."""
-    manual_symbols = context["manual_symbols"]
+    latest_scan_path = context["latest_scan_path"]
+    manual_symbols = context.get("manual_symbols", [])
 
-    # Example: read a local JSON file and return payload["symbols"]
-    # payload_path = Path(context["project_root"]) / "data" / "my_symbols.json"
-    # payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    # return payload.get("symbols", [])
+    data = json.loads(Path(latest_scan_path).read_text(encoding="utf-8"))
+    opportunities = data.get("opportunities", [])
 
-    return manual_symbols
+    symbols = []
+    seen = set()
+    for item in opportunities:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if symbol and symbol not in seen:
+            seen.add(symbol)
+            symbols.append(symbol)
+
+    # Fallback to the manually configured list if the latest scan file is empty.
+    return symbols or manual_symbols

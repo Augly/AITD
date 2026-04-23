@@ -3,15 +3,14 @@ from __future__ import annotations
 import contextlib
 import io
 import math
-import re
 import time
 from pathlib import Path
 from typing import Any
 
-from .config import PROMPT_KLINE_FEED_OPTIONS, read_candidate_source_code, read_fixed_universe, read_trading_settings
+from .config import PROMPT_KLINE_FEED_OPTIONS, read_candidate_source_code, read_fixed_universe, read_network_settings, read_trading_settings
 from .exchanges.catalog import DEFAULT_EXCHANGE_ID, normalize_exchange_id
 from .exchanges import get_active_exchange_gateway
-from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, read_json, safe_last, write_json
+from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, read_json, write_json
 
 
 LEGACY_LATEST_SCAN_PATH = DATA_DIR / "scans" / "latest.json"
@@ -121,7 +120,12 @@ def resolve_candidate_symbols(
 
     source_code = str(code_override if code_override is not None else read_candidate_source_code())
     function_name = str(dynamic_source.get("functionName") or "load_candidate_symbols").strip() or "load_candidate_symbols"
-    scope: dict[str, Any] = {"__builtins__": __builtins__}
+    latest_scan_path = str(_latest_scan_path(gateway.exchange_id))
+    scope: dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "scan_path": latest_scan_path,
+        "latest_scan_path": latest_scan_path,
+    }
     context = {
         "project_root": str(ROOT),
         "config_dir": str(CONFIG_DIR),
@@ -130,6 +134,9 @@ def resolve_candidate_symbols(
         "network_settings": read_network_settings(),
         "run_date": current_run_date(),
         "now_iso": now_iso(),
+        "active_exchange": gateway.exchange_id,
+        "scan_path": latest_scan_path,
+        "latest_scan_path": latest_scan_path,
     }
     stdout_buffer = io.StringIO()
     started = time.perf_counter()

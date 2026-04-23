@@ -2114,19 +2114,20 @@ function renderUniverseTest() {
     els.universePreview.textContent = `测试失败：${test.error}`;
     return;
   }
-  els.universeTestMeta.textContent = `${test.mode === "python_function" ? "Python 动态获取" : "手动 symbols"} · ${test.count || 0} 个 symbols · ${test.durationMs || 0}ms`;
-  els.universePreview.textContent = JSON.stringify(
-    {
-      mode: test.mode,
-      count: test.count,
-      symbols: test.symbols || [],
-      invalidSymbols: test.invalidSymbols || [],
-      note: test.note || "",
-      stdout: test.stdout || ""
-    },
-    null,
-    2
-  );
+  const metaParts = [
+    test.mode === "python_function" ? "Python 动态获取" : "手动 symbols",
+    `${test.count || 0} 个 symbols`,
+    `${test.durationMs || 0}ms`
+  ];
+  const invalidCount = Array.isArray(test.invalidSymbols) ? test.invalidSymbols.length : 0;
+  if (invalidCount) metaParts.push(`无效 ${invalidCount} 个`);
+  if (test.note) metaParts.push(`备注：${test.note}`);
+  if (test.stdout) metaParts.push(`stdout 已输出`);
+  els.universeTestMeta.textContent = metaParts.join(" · ");
+  const outputSymbols = Array.isArray(test.symbols) ? test.symbols : [];
+  els.universePreview.textContent = outputSymbols.length
+    ? outputSymbols.join("\n")
+    : "函数返回了空 list。";
 }
 
 function renderLogs() {
