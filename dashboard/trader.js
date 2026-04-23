@@ -739,6 +739,23 @@ function latestCandidateUniverse() {
   return scanCandidates;
 }
 
+function candidateDiagnostics() {
+  const savedSymbols = Array.isArray(state.universe?.symbols) ? state.universe.symbols : [];
+  const candidates = latestCandidateUniverse();
+  const invalidSymbols = Array.isArray(state.scan?.candidateSource?.invalidSymbols) ? state.scan.candidateSource.invalidSymbols : [];
+  const skippedSymbols = Array.isArray(state.scan?.skippedSymbols) ? state.scan.skippedSymbols : [];
+  const validSymbolCount = Number.isFinite(Number(state.scan?.universeSize)) && Number(state.scan?.universeSize) > 0
+    ? Number(state.scan.universeSize)
+    : Math.max(0, savedSymbols.length - invalidSymbols.length);
+  return {
+    savedSymbols,
+    validSymbolCount,
+    opportunityCount: candidates.length,
+    invalidSymbols,
+    skippedSymbols
+  };
+}
+
 function latestScanOpportunities() {
   return Array.isArray(state.scan?.opportunities) ? state.scan.opportunities : [];
 }
@@ -1702,14 +1719,204 @@ function renderClosedPositions() {
 
 function renderCandidates() {
   const candidates = latestCandidateUniverse();
-  els.candidateMeta.textContent = candidates.length ? `${candidates.length} 个 symbols` : "没有候选数据";
+  const diagnostics = candidateDiagnostics();
+  const summaryParts = [
+    `已保存 ${diagnostics.savedSymbols.length} 个`,
+    `校验有效 ${diagnostics.validSymbolCount} 个`,
+    `当前机会池 ${diagnostics.opportunityCount} 个`
+  ];
+  els.candidateMeta.textContent = summaryParts.join(" · ");
+  const invalidBlock = diagnostics.invalidSymbols.length
+    ? `
+      <p class="meta">未进入机会池的无效 symbols：${escapeHtml(diagnostics.invalidSymbols.join("、"))}</p>
+    `
+    : "";
+  const skippedBlock = diagnostics.skippedSymbols.length
+    ? `
+      <p class="meta">已通过 symbol 校验但本轮未拉到行情：${escapeHtml(diagnostics.skippedSymbols.join("、"))}</p>
+    `
+    : "";
   if (!candidates.length) {
-    els.candidateList.innerHTML = `<p class="empty">先保存候选池配置或执行一轮交易决策。</p>`;
+    els.candidateList.innerHTML = `
+      ${invalidBlock}
+      ${skippedBlock}
+      <p class="empty">先保存候选池配置或执行一轮交易决策。</p>
+    `;
     return;
   }
   els.candidateList.innerHTML = `
+    ${invalidBlock}
+    ${skippedBlock}
     <div class="universe-symbol-list">
       ${candidates.map((candidate) => `<span class="symbol-chip">${escapeHtml(candidate.symbol)}</span>`).join("")}
+    </div>
+  `;
+}
+
+function normalizeDecisionOutputPayload(output) {
+  const payload = output && typeof output === "object" ? output : {};
+  return {
+    summary: String(payload.summary || "").trim(),
+    positionActions: Array.isArray(payload.positionActions)
+      ? payload.positionActions
+      : (Array.isArray(payload.position_actions) ? payload.position_actions : []),
+    entryActions: Array.isArray(payload.entryActions)
+      ? payload.entryActions
+      : (Array.isArray(payload.entry_actions) ? payload.entry_actions : []),
+    watchlist: Array.isArray(payload.watchlist) ? payload.watchlist : [],
+    providerStatus: payload.providerStatus && typeof payload.providerStatus === "object" ? payload.providerStatus : null,
+    liveExecutionStatus: payload.liveExecutionStatus && typeof payload.liveExecutionStatus === "object" ? payload.liveExecutionStatus : null,
+    raw: payload
+  };
+}
+
+function decisionBadgeTone(value, kind = "decision") {
+  const text = String(value || "").trim().toLowerCase();
+  if (kind === "side") {
+    if (text === "long") return "positive";
+    if (text === "short") return "danger";
+    return "neutral";
+  }
+  if (text === "open") return "positive";
+  if (text === "hold") return "neutral";
+  if (text === "update") return "active";
+  if (text === "reduce") return "warning";
+  if (text === "close") return "danger";
+  return "neutral";
+}
+
+function decisionBadge(label, tone = "neutral") {
+  return `<span class="decision-output-badge is-${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
+}
+
+function decisionMetric(label, value, extraClass = "") {
+  return `
+    <div class="decision-output-metric ${extraClass}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderPositionActionCard(action) {
+  const symbol = String(action?.symbol || "n/a").toUpperCase();
+  const decision = String(action?.decision || "hold").trim().toLowerCase() || "hold";
+  const side = String(action?.side || "").trim().toLowerCase();
+  const metrics = [];
+  if (Number.isFinite(Number(action?.reduceFraction))) {
+    metrics.push(decisionMetric("减仓比例", fmtPct(Number(action.reduceFraction) * 100, 0)));
+  }
+  if (Number.isFinite(Number(action?.confidence))) {
+    metrics.push(decisionMetric("置信度", fmtPct(Number(action.confidence), 0)));
+  }
+  if (Number.isFinite(Number(action?.stopLoss))) {
+    metrics.push(decisionMetric("止损", fmtPrice(action.stopLoss)));
+  }
+  if (Number.isFinite(Number(action?.takeProfit))) {
+    metrics.push(decisionMetric("止盈", fmtPrice(action.takeProfit)));
+  }
+  return `
+    <article class="decision-output-card">
+      <div class="decision-output-card-head">
+        <strong>${escapeHtml(symbol)}</strong>
+        <div class="decision-output-badges">
+          ${decisionBadge(decision.toUpperCase(), decisionBadgeTone(decision))}
+          ${side ? decisionBadge(side.toUpperCase(), decisionBadgeTone(side, "side")) : ""}
+        </div>
+      </div>
+      <p class="decision-output-reason">${escapeHtml(action?.reason || "无说明")}</p>
+      ${metrics.length ? `<div class="decision-output-metrics">${metrics.join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderEntryActionCard(action) {
+  const symbol = String(action?.symbol || "n/a").toUpperCase();
+  const side = String(action?.side || "").trim().toLowerCase();
+  const actionType = String(action?.action || "open").trim().toLowerCase() || "open";
+  const metrics = [];
+  if (Number.isFinite(Number(action?.confidence))) {
+    metrics.push(decisionMetric("置信度", fmtPct(Number(action.confidence), 0)));
+  }
+  if (Number.isFinite(Number(action?.stopLoss))) {
+    metrics.push(decisionMetric("止损", fmtPrice(action.stopLoss)));
+  }
+  if (Number.isFinite(Number(action?.takeProfit))) {
+    metrics.push(decisionMetric("止盈", fmtPrice(action.takeProfit)));
+  }
+  return `
+    <article class="decision-output-card">
+      <div class="decision-output-card-head">
+        <strong>${escapeHtml(symbol)}</strong>
+        <div class="decision-output-badges">
+          ${decisionBadge(actionType.toUpperCase(), decisionBadgeTone(actionType))}
+          ${side ? decisionBadge(side.toUpperCase(), decisionBadgeTone(side, "side")) : ""}
+        </div>
+      </div>
+      <p class="decision-output-reason">${escapeHtml(action?.reason || "无说明")}</p>
+      ${metrics.length ? `<div class="decision-output-metrics">${metrics.join("")}</div>` : ""}
+    </article>
+  `;
+}
+
+function renderWatchlistCard(item) {
+  const symbol = String(item?.symbol || "n/a").toUpperCase();
+  return `
+    <article class="decision-output-card">
+      <div class="decision-output-card-head">
+        <strong>${escapeHtml(symbol)}</strong>
+        <div class="decision-output-badges">
+          ${decisionBadge("WATCH", "neutral")}
+        </div>
+      </div>
+      <p class="decision-output-reason">${escapeHtml(item?.reason || "无说明")}</p>
+    </article>
+  `;
+}
+
+function renderDecisionCardSection(title, records, renderer, emptyText) {
+  const items = Array.isArray(records) ? records : [];
+  return `
+    <section class="decision-output-section">
+      <div class="decision-output-section-head">
+        <h4>${escapeHtml(title)}</h4>
+        <span>${escapeHtml(String(items.length))}</span>
+      </div>
+      ${items.length
+        ? `<div class="decision-output-grid">${items.map((item) => renderer(item)).join("")}</div>`
+        : `<p class="decision-output-empty">${escapeHtml(emptyText)}</p>`}
+    </section>
+  `;
+}
+
+function renderDecisionOutput(output) {
+  const normalized = normalizeDecisionOutputPayload(output);
+  const providerText = normalized.providerStatus
+    ? `${normalized.providerStatus.preset || "provider"} / ${normalized.providerStatus.model || "model"}`
+    : "";
+  const liveExec = normalized.liveExecutionStatus;
+  const liveExecText = liveExec
+    ? (liveExec.canExecute ? "实盘可执行" : "实盘未执行")
+    : "";
+  return `
+    <div class="decision-output-stack">
+      <section class="decision-summary-card">
+        <div class="decision-output-card-head">
+          <strong>摘要</strong>
+          <div class="decision-output-badges">
+            ${providerText ? decisionBadge(providerText, "active") : ""}
+            ${liveExecText ? decisionBadge(liveExecText, liveExec?.canExecute ? "positive" : "warning") : ""}
+          </div>
+        </div>
+        <p class="decision-output-summary">${escapeHtml(normalized.summary || "本轮没有额外摘要。")}</p>
+      </section>
+      ${renderDecisionCardSection("持仓动作", normalized.positionActions, renderPositionActionCard, "这轮没有持仓管理动作。")}
+      ${renderDecisionCardSection("开仓动作", normalized.entryActions, renderEntryActionCard, "这轮没有新开仓建议。")}
+      ${renderDecisionCardSection("观察列表", normalized.watchlist, renderWatchlistCard, "这轮没有额外观察标的。")}
+      <details class="decision-raw-json">
+        <summary>查看原始 JSON</summary>
+        <pre class="pre-block">${escapeHtml(JSON.stringify(normalized.raw || {}, null, 2))}</pre>
+      </details>
     </div>
   `;
 }
@@ -1757,7 +1964,7 @@ function renderDecisionLog() {
             </div>
           </div>
           <div class="decision-tab-panel is-active" data-decision-tab-panel="output">
-            <pre class="pre-block">${escapeHtml(JSON.stringify(decision.output || {}, null, 2))}</pre>
+            ${renderDecisionOutput(decision.output || {})}
           </div>
           <div class="decision-tab-panel" data-decision-tab-panel="prompt" hidden>
             <pre class="pre-block">${escapeHtml(decision.prompt || "")}</pre>
