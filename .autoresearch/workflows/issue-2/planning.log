@@ -1,0 +1,36 @@
+经过分析，我发现 `backend/utils.py` 已经提供了带锁的 `read_json_locked` 和 `write_json_locked` 函数，但 `backend/engine/state.py` 仍然使用无锁的 `read_json` 和 `write_json`。这是一个简单的替换工作，可拆分为 2 个子任务。
+
+```json
+{
+  "issueNumber": 2,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "替换 state.py 为带锁的 JSON 读写",
+      "description": "将 backend/engine/state.py 中的 read_trading_state 和 write_trading_state 函数替换为使用 read_json_locked / write_json_locked（已存在于 backend/utils.py）。修改 import 语句，移除 read_json/write_json 导入，添加 read_json_locked/write_json_locked。",
+      "acceptanceCriteria": [
+        "state.py 的 import 包含 read_json_locked 和 write_json_locked",
+        "read_trading_state 调用 read_json_locked 替代 read_json",
+        "write_trading_state 调用 write_json_locked 替代 write_json",
+        "archive_decision 如使用 write_json 也需评估是否替换"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "编写并发安全测试",
+      "description": "为 read_trading_state 和 write_trading_state 编写并发安全测试，模拟多个线程同时读写状态文件的场景，验证无数据丢失或覆盖。",
+      "acceptanceCriteria": [
+        "测试覆盖多线程并发读写场景",
+        "测试验证数据一致性（写入的数据能被正确读取）",
+        "测试运行通过"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
