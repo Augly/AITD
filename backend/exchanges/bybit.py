@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urlencode
 
 from ..http_client import cached_get_json
 from ..utils import num, parse_klines
@@ -36,29 +35,8 @@ class BybitGateway(ExchangeGateway):
         normalized = self.normalize_symbol(symbol)
         return normalized[:-4] if normalized.endswith("USDT") else normalized
 
-    def _cache_policy_for_kline_interval(self, interval: str) -> tuple[int, int]:
-        interval = str(interval or "").lower()
-        if interval == "1m":
-            return 20, 60 * 60
-        if interval == "5m":
-            return 30, 2 * 60 * 60
-        if interval == "15m":
-            return 60, 3 * 60 * 60
-        if interval == "1h":
-            return 5 * 60, 12 * 60 * 60
-        if interval == "4h":
-            return 15 * 60, 48 * 60 * 60
-        return 60, 6 * 60 * 60
-
     def resolved_base_url(self, config: dict[str, Any]) -> str:
         return str(config.get("baseUrl") or self.public_base_url).strip() or self.public_base_url
-
-    def _query(self, base_url: str, endpoint: str, params: dict[str, Any] | None = None) -> str:
-        filtered = {key: value for key, value in (params or {}).items() if value not in (None, "", [], {})}
-        query = urlencode(filtered)
-        if not query:
-            return f"{base_url.rstrip('/')}{endpoint}"
-        return f"{base_url.rstrip('/')}{endpoint}?{query}"
 
     def _bybit_result(self, payload: Any, *, endpoint: str) -> Any:
         if not isinstance(payload, dict):

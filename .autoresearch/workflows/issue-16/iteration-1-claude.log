@@ -1,0 +1,21 @@
+子任务 T-001 已完成。
+
+## 总结
+
+**创建文件**: `tests/test_utils.py` — 49 个测试，全部通过。
+
+**覆盖函数**:
+- `num()` — 10 个测试（发现 `num(0)` 和 `num(0.0)` 因 Python `False == 0` 返回 `None` 的边界问题）
+- `clamp()` — 8 个测试
+- `clean_bool()` — 4 个测试
+- `one_line()` — 9 个测试
+- `safe_last()` — 4 个测试
+- `sha1_hex()` — 4 个测试
+- `parse_json_loose()` — 10 个测试
+
+**全量测试**: 155 个全部通过，无回归。
+
+## Learnings
+
+- **踩坑**: `num()` 的实现使用 `value in (None, "", False)`，由于 Python 中 `bool` 是 `int` 子类且 `False == 0 == 0.0`，导致整数 `0` 和浮点数 `0.0` 被错误地当作 `False` 处理而返回 `None`。修复方案应使用 `is` 而非 `in`：`if value is None or value == "" or value is False`。
+- **经验**: 项目测试组织采用 `tests/test_<module>.py` 的命名约定，使用 `class Test<Feature>` 分组，测试方法名以 `test_` 前缀描述场景。后续测试应遵循此模式。
