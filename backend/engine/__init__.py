@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .executor import ExecutionBackend
 from .state import (
     archive_decision,
     default_state,
@@ -19,6 +20,7 @@ __all__ = [
     "default_state",
     "derive_session_started_at",
     "empty_trading_account",
+    "ExecutionBackend",
     "normalize_decision",
     "normalize_exchange_closed_trade",
     "normalize_order",

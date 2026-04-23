@@ -6,7 +6,6 @@ import re
 from typing import Any
 from urllib.parse import urlencode
 
-from ..config import read_live_trading_config, read_network_settings
 from ..http_client import HttpRequestError, cached_get_json, request_json
 from ..utils import clamp, now_iso, num
 from .base import ExchangeGateway
@@ -29,7 +28,16 @@ class BinanceGateway(ExchangeGateway):
         "STRATEGY_UMFUTURES_TRANSFER",
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        config_provider=None,
+        network_settings_provider=None,
+    ) -> None:
+        super().__init__(
+            config_provider=config_provider,
+            network_settings_provider=network_settings_provider,
+        )
         self._server_time_offset_ms = 0
 
     @staticmethod
@@ -111,7 +119,6 @@ class BinanceGateway(ExchangeGateway):
         ttl_seconds: int,
         max_stale_seconds: int,
     ) -> Any:
-        network_settings = read_network_settings()
         url = self._query(self.public_base_url, endpoint, params)
         return cached_get_json(
             url,
@@ -119,7 +126,7 @@ class BinanceGateway(ExchangeGateway):
             ttl_seconds=ttl_seconds,
             max_stale_seconds=max_stale_seconds,
             timeout_seconds=45,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
 
     def _parse_klines(self, rows: list[list[Any]] | None) -> list[dict[str, Any]]:
@@ -213,7 +220,7 @@ class BinanceGateway(ExchangeGateway):
         live_config: dict[str, Any] | None = None,
         trading_settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        live_config = live_config or read_live_trading_config()
+        live_config = live_config or self._get_live_config()
         issues = []
         if not live_config.get("apiKey"):
             issues.append("Live trading API key is missing.")
@@ -253,13 +260,12 @@ class BinanceGateway(ExchangeGateway):
         return f"{query_string}&signature={signature}"
 
     def _sync_server_time_offset(self, config: dict[str, Any]) -> None:
-        network_settings = read_network_settings()
         base_url = self.resolved_base_url(config).rstrip("/")
         payload = request_json(
             "GET",
             f"{base_url}/fapi/v1/time",
             timeout_seconds=10,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
         server_time = num(payload.get("serverTime")) if isinstance(payload, dict) else None
         local_time = int(__import__("time").time() * 1000)
@@ -273,7 +279,6 @@ class BinanceGateway(ExchangeGateway):
         endpoint: str,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        network_settings = read_network_settings()
         base_url = self.resolved_base_url(config).rstrip("/")
         headers_base = {"X-MBX-APIKEY": config["apiKey"]}
 
@@ -286,7 +291,7 @@ class BinanceGateway(ExchangeGateway):
                     f"{url}?{query}",
                     headers=headers_base,
                     timeout_seconds=45,
-                    network_settings=network_settings,
+                    network_settings=self._get_network_settings(),
                 )
             return request_json(
                 method,
@@ -297,7 +302,7 @@ class BinanceGateway(ExchangeGateway):
                 },
                 payload=query,
                 timeout_seconds=45,
-                network_settings=network_settings,
+                network_settings=self._get_network_settings(),
             )
 
         try:
@@ -309,7 +314,6 @@ class BinanceGateway(ExchangeGateway):
             raise HttpRequestError(f"{error} [endpoint {method.upper()} {endpoint}]") from error
 
     def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
-        network_settings = read_network_settings()
         url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
         payload = cached_get_json(
             url,
@@ -317,7 +321,7 @@ class BinanceGateway(ExchangeGateway):
             ttl_seconds=6 * 60 * 60,
             max_stale_seconds=7 * 24 * 60 * 60,
             timeout_seconds=45,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
         return payload if isinstance(payload, dict) else {}
 

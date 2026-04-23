@@ -1,7 +1,19 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Protocol
+
+
+class ConfigProvider(Protocol):
+    """Protocol for live trading configuration providers."""
+
+    def __call__(self) -> dict[str, Any]: ...
+
+
+class NetworkSettingsProvider(Protocol):
+    """Protocol for network settings providers."""
+
+    def __call__(self) -> dict[str, Any]: ...
 
 
 class ExchangeGateway(ABC):
@@ -9,6 +21,25 @@ class ExchangeGateway(ABC):
     display_name: str = ""
     market_label: str = ""
     default_backdrop_symbol: str = ""
+
+    def __init__(
+        self,
+        *,
+        config_provider: ConfigProvider | None = None,
+        network_settings_provider: NetworkSettingsProvider | None = None,
+    ) -> None:
+        self._config_provider = config_provider
+        self._network_settings_provider = network_settings_provider
+
+    def _get_live_config(self) -> dict[str, Any]:
+        if self._config_provider is not None:
+            return self._config_provider()
+        return {}
+
+    def _get_network_settings(self) -> dict[str, Any]:
+        if self._network_settings_provider is not None:
+            return self._network_settings_provider()
+        return {}
 
     def candidate_symbol_hint(self) -> str:
         return f"{self.display_name} {self.market_label} symbols".strip()

@@ -8,20 +8,41 @@ from .base import ExchangeGateway
 _GATEWAYS: dict[str, ExchangeGateway] = {}
 
 
-def _ensure_gateways() -> None:
+def _ensure_gateways(
+    *,
+    config_provider=None,
+    network_settings_provider=None,
+) -> None:
     if _GATEWAYS:
         return
     from .binance import BinanceGateway
     from .bybit import BybitGateway
     from .okx import OkxGateway
 
-    _GATEWAYS["binance"] = BinanceGateway()
-    _GATEWAYS["bybit"] = BybitGateway()
-    _GATEWAYS["okx"] = OkxGateway()
+    _GATEWAYS["binance"] = BinanceGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+    _GATEWAYS["bybit"] = BybitGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+    _GATEWAYS["okx"] = OkxGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
 
 
-def get_exchange_gateway(exchange_id: str | None) -> ExchangeGateway:
-    _ensure_gateways()
+def get_exchange_gateway(
+    exchange_id: str | None,
+    *,
+    config_provider=None,
+    network_settings_provider=None,
+) -> ExchangeGateway:
+    _ensure_gateways(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
     key = str(exchange_id or "binance").strip().lower() or "binance"
     if key not in _GATEWAYS:
         supported = ", ".join(sorted(_GATEWAYS))

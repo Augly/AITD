@@ -1,0 +1,38 @@
+所有改动验证完毕。让我做最终总结。
+
+---
+
+## 子任务 T-001 实现完成
+
+### 修改的文件
+
+| 文件 | 改动内容 |
+|------|----------|
+| `backend/exchanges/base.py` | 新增 `ConfigProvider` 和 `NetworkSettingsProvider` Protocol；`ExchangeGateway` 新增 `__init__` 构造器，接受 `config_provider` 和 `network_settings_provider`；新增 `_get_live_config()` 和 `_get_network_settings()` 辅助方法 |
+| `backend/exchanges/binance.py` | 移除 `from ..config import ...`；`__init__` 调用父类构造器；所有 `read_network_settings()` → `self._get_network_settings()`；`read_live_trading_config()` → `self._get_live_config()` |
+| `backend/exchanges/okx.py` | 同上 |
+| `backend/exchanges/bybit.py` | 同上 |
+| `backend/exchanges/__init__.py` | `_ensure_gateways()` 和 `get_exchange_gateway()` 接受 provider 参数并注入到网关实例 |
+| `tests/test_exchange_gateway_base.py` | **新增** — 13 个测试覆盖构造器注入、Protocol 类型、向后兼容 |
+| `backend/exchanges/CLAUDE.md` | **新增** — 记录模块架构约定 |
+
+### 验收条件检查
+
+- [x] `ExchangeGateway` 基类新增 `__init__` 构造器，接受 `config_provider` 和 `network_settings_provider` 参数
+- [x] 定义了 `ConfigProvider` 和 `NetworkSettingsProvider` 的 Protocol 类型
+- [x] 现有抽象方法签名保持不变（通过 `test_all_abstract_methods_exist` 验证）
+- [x] `backend/exchanges/base.py` 不再直接导入 config 模块（通过 `test_no_config_import_in_base` 验证）
+
+### 测试结果
+
+- **新增测试**: 13/13 通过
+- **全量回归**: 72/72 通过，无回归
+
+---
+
+## Learnings
+
+- **模式**: 使用 `typing.Protocol` 定义依赖契约，无需强制具体类继承，支持 lambda、partial、普通函数等多种调用形式，灵活性高
+- **踩坑**: Python 3.9 的 `Protocol` 需要从 `typing` 导入（3.8+ 支持），但 `__call__` 方法签名必须完整定义才能被类型检查器识别
+- **经验**: 构造器参数使用 keyword-only (`*` 分隔) 可以防止位置参数误用，同时让子类构造器签名更清晰；基类提供 `_get_*` 辅助方法而非直接暴露 provider 属性，可以在 provider 为 None 时提供安全的空字典回退
+- **经验**: 工厂函数 `_ensure_gateways()` 注入 provider 到全局单例时，需要注意单例一旦创建就不会更新 provider；当前实现中这是可接受的，因为 provider 通常在应用启动时确定

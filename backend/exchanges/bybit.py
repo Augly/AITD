@@ -4,7 +4,6 @@ import re
 from typing import Any
 from urllib.parse import urlencode
 
-from ..config import read_live_trading_config, read_network_settings
 from ..http_client import cached_get_json
 from ..utils import num
 from .base import ExchangeGateway
@@ -79,7 +78,6 @@ class BybitGateway(ExchangeGateway):
         ttl_seconds: int,
         max_stale_seconds: int,
     ) -> dict[str, Any]:
-        network_settings = read_network_settings()
         url = self._query(self.public_base_url, endpoint, params)
         payload = cached_get_json(
             url,
@@ -87,7 +85,7 @@ class BybitGateway(ExchangeGateway):
             ttl_seconds=ttl_seconds,
             max_stale_seconds=max_stale_seconds,
             timeout_seconds=45,
-            network_settings=network_settings,
+            network_settings=self._get_network_settings(),
         )
         return self._bybit_result(payload, endpoint=endpoint)
 
@@ -204,7 +202,7 @@ class BybitGateway(ExchangeGateway):
         live_config: dict[str, Any] | None = None,
         trading_settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        live_config = live_config or read_live_trading_config()
+        live_config = live_config or self._get_live_config()
         issues = ["Bybit live trading is not wired in yet in this Python build."]
         return {
             "configEnabled": live_config.get("enabled") is True,
