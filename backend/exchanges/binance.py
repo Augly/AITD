@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..http_client import HttpRequestError, cached_get_json, request_json
-from ..utils import clamp, now_iso, num
+from ..utils import clamp, now_iso, num, parse_klines
 from .base import ExchangeGateway
 from .catalog import exchange_config
 
@@ -130,24 +130,7 @@ class BinanceGateway(ExchangeGateway):
         )
 
     def _parse_klines(self, rows: list[list[Any]] | None) -> list[dict[str, Any]]:
-        parsed: list[dict[str, Any]] = []
-        for row in rows or []:
-            close_value = num(row[4]) if len(row) > 4 else None
-            if close_value is None:
-                continue
-            parsed.append(
-                {
-                    "openTime": row[0],
-                    "open": num(row[1]),
-                    "high": num(row[2]),
-                    "low": num(row[3]),
-                    "close": close_value,
-                    "volume": num(row[5]),
-                    "closeTime": row[6],
-                    "quoteVolume": num(row[7]),
-                }
-            )
-        return parsed
+        return parse_klines(rows)
 
     def fetch_all_tickers_24h(self) -> list[dict[str, Any]]:
         payload = self._public_get_json(

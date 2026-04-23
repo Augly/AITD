@@ -10,7 +10,7 @@ from typing import Any
 from .config import PROMPT_KLINE_FEED_OPTIONS, read_candidate_source_code, read_fixed_universe, read_network_settings, read_trading_settings
 from .exchanges.catalog import DEFAULT_EXCHANGE_ID, normalize_exchange_id
 from .exchanges import get_active_exchange_gateway
-from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, read_json, write_json
+from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, parse_klines, read_json, write_json
 
 
 LEGACY_LATEST_SCAN_PATH = DATA_DIR / "scans" / "latest.json"
@@ -416,24 +416,8 @@ def refresh_candidate_pool(exchange_id: str | None = None) -> dict[str, Any]:
 
 
 def parse_klines(rows: list[list[Any]] | None) -> list[dict[str, Any]]:
-    parsed = []
-    for row in rows or []:
-        close_value = num(row[4]) if len(row) > 4 else None
-        if close_value is None:
-            continue
-        parsed.append(
-            {
-                "openTime": row[0],
-                "open": num(row[1]),
-                "high": num(row[2]),
-                "low": num(row[3]),
-                "close": close_value,
-                "volume": num(row[5]),
-                "closeTime": row[6],
-                "quoteVolume": num(row[7]),
-            }
-        )
-    return parsed
+    from .utils import parse_klines as _parse_klines
+    return _parse_klines(rows)
 
 
 def average(values: list[float | None]) -> float | None:

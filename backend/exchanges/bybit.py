@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from ..http_client import cached_get_json
-from ..utils import num
+from ..utils import num, parse_klines
 from .base import ExchangeGateway
 from .catalog import exchange_config
 
@@ -176,26 +176,13 @@ class BybitGateway(ExchangeGateway):
             max_stale_seconds=max_stale_seconds,
         )
         rows = result.get("list")
-        parsed: list[dict[str, Any]] = []
-        for row in reversed(rows if isinstance(rows, list) else []):
-            if not isinstance(row, list) or len(row) < 7:
-                continue
-            close_value = num(row[4])
-            if close_value is None:
-                continue
-            parsed.append(
-                {
-                    "openTime": int(num(row[0]) or 0),
-                    "open": num(row[1]),
-                    "high": num(row[2]),
-                    "low": num(row[3]),
-                    "close": close_value,
-                    "volume": num(row[5]),
-                    "closeTime": int(num(row[0]) or 0),
-                    "quoteVolume": num(row[6]),
-                }
-            )
-        return parsed
+        return parse_klines(
+            rows if isinstance(rows, list) else [],
+            reverse=True,
+            quote_volume_index=6,
+            close_time_index=None,
+            min_length=7,
+        )
 
     def live_execution_status(
         self,
