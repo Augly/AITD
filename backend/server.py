@@ -37,7 +37,7 @@ from .config import (
     write_trading_settings,
 )
 from .http_client import HttpRequestError, request_text
-from .engine import (
+from .engine_core import (
     flatten_active_account,
     preview_trading_prompt_decision,
     read_trading_state,

@@ -1,0 +1,117 @@
+已完成对 `backend/engine.py`（1670 行）的全面分析。该文件承担了 6+ 项职责，我将按 Issue 描述的拆分方案，将其拆分为 5 个可独立完成的子任务。
+
+## 分析总结
+
+**engine.py 的职责分布：**
+
+| 行数范围 | 职责 | 涉及函数 |
+|---------|------|---------|
+| 37-304 | 状态管理（读写、序列化、归档） | `read_trading_state`, `write_trading_state`, `archive_decision`, `default_state`, `normalize_*` |
+| 305-423 | 仓位/账户计算 | `position_pnl`, `enrich_position`, `summarize_account`, `action_label`, `serialize_candidate_*` |
+| 424-503 | 仓位操作（开仓、平仓、减仓） | `close_position`, `reduce_position`, `open_paper_position` |
+| 504-596 | Prompt 构建 | `build_prompt` |
+| 597-704 | LLM 决策解析 | `default_model_decision`, `normalize_model_decision` |
+| 705-792 | 风控逻辑 | `mark_to_market`, `apply_protection_hits`, `position_notional_from_risk`, `cap_live_notional_by_margin`, `_risk_valid_for_side` |
+| 793-1012 | 执行器（live/paper 仓位操作应用） | `apply_live_position_action`, `apply_paper_position_action`, `sync_live_book` |
+| 1013-1097 | 熔断器 | `apply_account_circuit_breaker` |
+| 1098-1122 | 实时数据获取 | `_fetch_live_contexts`, `_fetch_live_contexts_for_exchange` |
+| 1123-1403 | 交易循环（核心编排） | `run_trading_cycle`, `run_trading_cycle_batch` |
+| 1404-1670 | 查询/工具函数 | `preview_trading_prompt_decision`, `summarize_trading_state`, `flatten_active_account`, `reset_trading_account` 等 |
+
+## 子任务拆分
+
+按依赖顺序（底层先拆，上层后拆）排列：
+
+```json
+{
+  "issueNumber": 9,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "提取状态管理模块 (engine/state.py)",
+      "description": "将 engine.py 中的状态读写、序列化、归一化逻辑抽取到 engine/state.py。包括：default_state, empty_trading_account, normalize_position/trade/order/decision/exchange_closed_trade, read_trading_state, write_trading_state, archive_decision, derive_session_started_at。保持现有接口不变，engine.py 通过 import 使用。",
+      "acceptanceCriteria": [
+        "engine/state.py 文件创建，包含所有状态相关函数",
+        "engine.py 中移除对应函数，改为从 engine.state 导入",
+        "所有现有测试通过",
+        "状态读写行为与拆分前完全一致"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "提取 Prompt 构建与决策解析模块 (engine/prompt_builder.py)",
+      "description": "将 engine.py 中的 Prompt 构建和 LLM 决策解析逻辑抽取到 engine/prompt_builder.py。包括：build_prompt, serialize_candidate_for_prompt/history, default_model_decision, normalize_model_decision。这些函数仅依赖配置读取和工具函数，无状态依赖，适合早期拆分。",
+      "acceptanceCriteria": [
+        "engine/prompt_builder.py 文件创建，包含 Prompt 构建和决策解析函数",
+        "engine.py 中移除对应函数，改为从 engine.prompt_builder 导入",
+        "所有现有测试通过",
+        "Prompt 生成内容和决策解析行为与拆分前完全一致"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "提取风控模块 (engine/risk.py)",
+      "description": "将 engine.py 中的风控逻辑抽取到 engine/risk.py。包括：mark_to_market, _risk_valid_for_side, apply_protection_hits, position_notional_from_risk, cap_live_notional_by_margin, apply_account_circuit_breaker。同时包含仓位/账户计算函数：position_pnl, enrich_position, summarize_account, action_label。",
+      "acceptanceCriteria": [
+        "engine/risk.py 文件创建，包含所有风控和账户计算函数",
+        "engine.py 中移除对应函数，改为从 engine.risk 导入",
+        "所有现有测试通过",
+        "风控计算（止损止盈触发、仓位名义值计算、熔断器）行为与拆分前完全一致"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "提取执行器模块 (engine/executor.py)",
+      "description": "将 engine.py 中的仓位操作和 live/paper 执行逻辑抽取到 engine/executor.py。包括：close_position, reduce_position, open_paper_position, apply_live_position_action, apply_paper_position_action, sync_live_book, refresh_account_state_after_settings_save。这些函数依赖 T-001 的状态管理和 T-003 的风控函数。",
+      "acceptanceCriteria": [
+        "engine/executor.py 文件创建，包含所有执行相关函数",
+        "engine.py 中移除对应函数，改为从 engine.executor 导入",
+        "所有现有测试通过",
+        "live/paper 仓位操作和同步行为与拆分前完全一致"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-005",
+      "title": "提取交易循环模块 (engine/cycle.py) 并清理 engine.py",
+      "description": "将 engine.py 中的核心交易循环和剩余查询函数抽取到 engine/cycle.py。包括：run_trading_cycle, run_trading_cycle_batch, preview_trading_prompt_decision, _fetch_live_contexts, _fetch_live_contexts_for_exchange。以及工具函数：summarize_book_history, compact_latest_decision, summarize_trading_state, flatten_active_account, reset_paper_account, reset_trading_account。完成后 engine.py 应精简为仅保留入口导入（或完全删除由 __init__.py 接管）。",
+      "acceptanceCriteria": [
+        "engine/cycle.py 文件创建，包含交易循环和查询函数",
+        "engine.py 精简为入口文件或删除（由 backend/engine/__init__.py 接管）",
+        "所有现有测试通过",
+        "run_trading_cycle 完整流程与拆分前完全一致",
+        "backend 其他模块对 engine 的导入路径保持兼容"
+      ],
+      "priority": 5,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
+
+## 依赖关系
+
+```
+T-001 (状态管理) ──┐
+                   ├──→ T-004 (执行器) ──→ T-005 (交易循环)
+T-003 (风控) ──────┘      ↑
+                          │
+T-002 (Prompt/决策解析) ────┘
+```
+
+- **T-001 和 T-002 可并行**：两者互不依赖，都是底层工具模块
+- **T-003 依赖 T-001**（summarize_account 需要状态结构）
+- **T-004 依赖 T-001 和 T-003**
+- **T-005 依赖所有前置任务**（整合所有模块）
