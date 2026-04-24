@@ -3,6 +3,7 @@
 2026-04-24T00:50:38+08:00	6	P0: API 密钥明文存储且错误信息可能泄露	completed	3	false	100	100	feature/issue-6	
 2026-04-24T01:07:15+08:00	7	P2: 替换废弃 datetime.utcnow() API	completed	3	false	89	89	feature/issue-7	
 2026-04-24T02:17:26+08:00	9	P1: 拆分 engine.py God Class（1670行）	completed	3	false	90	90	feature/issue-9	
+<<<<<<< HEAD
 2026-04-24T02:41:08+08:00	10	P1: 统一 Paper/Live 执行路径	blocked	3	false	50	50	feature/issue-10	
 2026-04-24T03:01:41+08:00	11	P1: 交易所网关解耦配置依赖	completed	3	false	100	100	feature/issue-11	
 2026-04-24T03:34:50+08:00	12	P2: 优化 summarize_account 重复调用性能	completed	3	false	98	98	feature/issue-12	
@@ -11,3 +12,6 @@
 2026-04-24T04:32:38+08:00	15	P2: 消除交易所缓存策略和 URL 构建代码重复	blocked	3	false	10	10	feature/issue-15	
 2026-04-24T05:11:13+08:00	16	P3: 添加 pytest 测试框架	completed	3	false	97	97	feature/issue-16	
 2026-04-24T05:29:15+08:00	17	P3: 引入事件系统解耦交易循环	completed	3	false	99	99	feature/issue-17	
+=======
+2026-04-24T06:03:20+08:00	10	P1: 统一 Paper/Live 执行路径	completed	3	false	85	85	feature/issue-10	
+>>>>>>> c3ac20a (feat: implement issue #10 - P1: 统一 Paper/Live 执行路径)
