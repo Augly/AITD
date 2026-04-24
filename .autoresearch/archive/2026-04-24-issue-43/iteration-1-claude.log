@@ -1,0 +1,19 @@
+子任务 T-001 已完成。
+
+## 修改总结
+
+| 文件 | 修改内容 |
+|------|----------|
+| `backend/engine_core.py` | 顶部添加 `import time`；替换 5 处 `__import__('time')` → `time.time()` |
+| `backend/engine/common.py` | 顶部添加 `import time`；替换 2 处 `__import__('time')` → `time.time()` |
+
+## 验证结果
+
+- **语法检查**: 通过 (`py_compile`)
+- **相关测试**: 5 passed（engine/position 相关测试）
+- **无遗留 `__import__`**: 两个文件中 `__import__('time')` 已全部清除
+
+## Learnings
+
+- **模式**: 项目使用 `int(time.time() * 1000)` 生成毫秒级时间戳 ID，用于 trade/position/decision 等实体的唯一标识
+- **经验**: `engine_core.py` 和 `engine/common.py` 中存在重复的 `close_position`/`reduce_position` 函数定义，属于 engine.py 拆分过程中的遗留重复代码，后续迭代可考虑清理

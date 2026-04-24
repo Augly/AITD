@@ -1,0 +1,34 @@
+{
+  "issueNumber": 41,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "为 _symbol_info 添加内存级缓存机制",
+      "description": "在 BinanceGateway 类中添加实例级别的 _exchange_info 缓存。缓存应存储解析后的 symbol → info 映射字典，避免每次调用 _symbol_info 时重新遍历整个 symbols 列表。缓存需要与 cached_get_json 的文件缓存 TTL 对齐（6小时），并提供显式清理接口。修改 _symbol_info 方法优先从内存缓存读取，未命中时回退到 _exchange_info 并更新缓存。",
+      "acceptanceCriteria": [
+        "_symbol_info 首次调用后，同实例的后续调用直接从内存缓存读取",
+        "内存缓存 TTL 与文件缓存一致（6小时）",
+        "缓存过期后能自动重新获取",
+        "提供显式清理缓存的方法（如 _clear_symbol_cache）",
+        "validate_symbol 方法也能利用此缓存（如果适用）"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "编写缓存行为的单元测试",
+      "description": "为新增的内存缓存机制编写单元测试，验证：缓存命中时不再遍历 symbols 列表、缓存过期后重新获取、缓存清理功能正常。使用 mock 模拟 _exchange_info 的返回值，避免真实 HTTP 请求。",
+      "acceptanceCriteria": [
+        "测试缓存命中时 _exchange_info 不被重复调用",
+        "测试缓存过期后自动刷新",
+        "测试显式清理缓存功能",
+        "测试覆盖边界情况（空 symbols 列表、symbol 不存在等）"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "issueNumber": 43,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "Replace __import__ in engine_core.py and engine/common.py",
+      "description": "将 backend/engine_core.py（5处）和 backend/engine/common.py（2处）中的 __import__('time') 替换为模块顶层的 `import time`。这些文件位于同一模块边界内，且都是生成时间戳 ID 的相同模式。",
+      "acceptanceCriteria": [
+        "engine_core.py 中所有 __import__('time') 被替换为 time.time()",
+        "engine/common.py 中所有 __import__('time') 被替换为 time.time()",
+        "两个文件顶部添加 `import time`（如尚未存在）",
+        "相关测试通过"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "Replace __import__ in engine/state.py and engine/executor.py",
+      "description": "将 backend/engine/state.py（6处）和 backend/engine/executor.py（1处）中的 __import__('time') 和 __import__('datetime') 替换为顶层 import。state.py 同时使用了 time 和 datetime，executor.py 只用了 time。",
+      "acceptanceCriteria": [
+        "engine/state.py 中所有 __import__('time') 被替换为 time.time()",
+        "engine/state.py 中 __import__('datetime') 被替换为 datetime.datetime",
+        "engine/executor.py 中 __import__('time') 被替换为 time.time()",
+        "文件顶部添加对应的 import 语句",
+        "相关测试通过"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "Replace __import__ in exchanges/binance.py",
+      "description": "将 backend/exchanges/binance.py 中的 6 处 __import__（time 和 datetime）替换为顶层 import。该文件是交易所网关模块，与其他 engine 模块独立。",
+      "acceptanceCriteria": [
+        "binance.py 中所有 __import__('time') 被替换为 time.time()",
+        "binance.py 中 __import__('datetime') 被替换为 datetime.datetime",
+        "文件顶部添加 `import time` 和 `from datetime import datetime`（或等效导入）",
+        "相关测试通过"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "Replace __import__ in market.py and server.py",
+      "description": "将 backend/market.py（1处 datetime）和 backend/server.py（2处 datetime）中的 __import__('datetime') 替换为顶层 import。这两个文件都仅使用 datetime 模块。",
+      "acceptanceCriteria": [
+        "market.py 中 __import__('datetime') 被替换为 datetime.datetime",
+        "server.py 中所有 __import__('datetime') 被替换为 datetime.datetime",
+        "文件顶部添加对应的 datetime import",
+        "相关测试通过"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

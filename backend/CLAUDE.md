@@ -22,6 +22,11 @@
 - 需要验证连接池时，不要依赖 `httpx.Client` 暴露 `limits` 属性；测试应改为断言创建参数或缓存行为
 - 模块级连接池要提供显式清理入口，并在进程退出时注册关闭逻辑，避免测试间状态污染
 
+### 日志模块约定
+
+- `backend/logging_config.py` 的结构化日志输出必须显式绑定到 `sys.stdout`；`logging.StreamHandler()` 默认写 `stderr`，不满足 `api_logs` 相关子任务的验收语义
+- 日志配置测试除了校验 handler 数量和 JSON 内容，还要断言 stream handler 绑定的是 `sys.stdout`，避免“测试全绿但输出流错误”的回退
+
 ### 注意事项
 
 - `backend/engine/` 是 Python 包（含 `__init__.py`），`backend/engine_core.py` 是普通模块

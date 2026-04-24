@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from copy import deepcopy
 from typing import Any, Callable
@@ -260,7 +261,7 @@ def serialize_candidate_for_prompt(candidate: dict[str, Any]) -> dict[str, Any]:
 def close_position(book: dict[str, Any], position: dict[str, Any], exit_price: float, decision_id: str, reason: str) -> tuple[dict[str, Any], dict[str, Any]]:
     trade = normalize_trade(
         {
-            "id": f"{position['id']}-close-{int(__import__('time').time() * 1000)}",
+            "id": f"{position['id']}-close-{int(time.time() * 1000)}",
             "positionId": position["id"],
             "symbol": position["symbol"],
             "baseAsset": position["baseAsset"],
@@ -300,7 +301,7 @@ def reduce_position(book: dict[str, Any], position: dict[str, Any], exit_price: 
     partial_position["quantity"] = close_qty
     trade = normalize_trade(
         {
-            "id": f"{position['id']}-reduce-{int(__import__('time').time() * 1000)}",
+            "id": f"{position['id']}-reduce-{int(time.time() * 1000)}",
             "positionId": position["id"],
             "symbol": position["symbol"],
             "baseAsset": position["baseAsset"],
@@ -642,7 +643,7 @@ def open_paper_position(
     quantity = notional_usd / entry_price if entry_price else 0
     position = normalize_position(
         {
-            "id": f"{candidate['symbol']}-{int(__import__('time').time() * 1000)}",
+            "id": f"{candidate['symbol']}-{int(time.time() * 1000)}",
             "symbol": candidate["symbol"],
             "baseAsset": candidate["baseAsset"],
             "side": side,
@@ -969,7 +970,7 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     if account_key != "live":
         book["initialCapitalUsd"] = settings["initialCapitalUsd"]
     book.setdefault("sessionStartedAt", book.get("sessionStartedAt") or now_iso())
-    decision_id = f"trade-cycle-{int(__import__('time').time() * 1000)}"
+    decision_id = f"trade-cycle-{int(time.time() * 1000)}"
     warnings: list[str] = []
     live_status_payload = None
     if account_key == "live":
@@ -1385,7 +1386,7 @@ def flatten_active_account(reason: str = "manual_flatten", mode_override: str | 
     state = read_trading_state(settings)
     account_key = account_key_for_mode(target_mode)
     book = state[account_key]
-    decision_id = f"flatten-{int(__import__('time').time() * 1000)}"
+    decision_id = f"flatten-{int(time.time() * 1000)}"
     actions = []
     warnings: list[str] = []
     if account_key == "live":

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -165,7 +167,7 @@ class PaperBackend(ExecutionBackend):
         quantity = notional_usd / entry_price if entry_price else 0
         position = normalize_position(
             {
-                "id": f"{candidate['symbol']}-{int(__import__('time').time() * 1000)}",
+                "id": f"{candidate['symbol']}-{int(time.time() * 1000)}",
                 "symbol": candidate["symbol"],
                 "baseAsset": candidate["baseAsset"],
                 "side": entry["side"],

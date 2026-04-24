@@ -12,6 +12,9 @@ from ..utils import clamp, now_iso, num, parse_klines
 from .base import ExchangeGateway
 from .catalog import exchange_config
 
+EXCHANGE_INFO_CACHE_TTL_SECONDS = 6 * 60 * 60
+EXCHANGE_INFO_CACHE_MAX_STALE_SECONDS = 7 * 24 * 60 * 60
+
 
 class BinanceGateway(ExchangeGateway):
     exchange_id = "binance"
@@ -40,6 +43,9 @@ class BinanceGateway(ExchangeGateway):
             network_settings_provider=network_settings_provider,
         )
         self._server_time_offset_ms = 0
+        self._symbol_info_cache: dict[str, dict[str, Any]] = {}
+        self._symbol_info_cache_expiry: float = 0.0
+        self._symbol_info_cache_base_url: str | None = None
 
     @staticmethod
     def _exchange_margin_type(value: Any) -> str:
@@ -72,15 +78,8 @@ class BinanceGateway(ExchangeGateway):
         if not self.symbol_pattern.fullmatch(normalized):
             return False
         try:
-            payload = self._public_get_json(
-                "/fapi/v1/exchangeInfo",
-                namespace="exchange_info",
-                ttl_seconds=6 * 60 * 60,
-                max_stale_seconds=7 * 24 * 60 * 60,
-            )
-            symbols = payload.get("symbols") if isinstance(payload, dict) else []
-            if isinstance(symbols, list) and symbols:
-                return any(self.normalize_symbol(item.get("symbol")) == normalized for item in symbols if isinstance(item, dict))
+            self._symbol_info_cache_refresh(self._get_live_config())
+            return normalized in self._symbol_info_cache
         except Exception:
             pass
         return True
@@ -288,19 +287,45 @@ class BinanceGateway(ExchangeGateway):
         payload = cached_get_json(
             url,
             namespace="binance_live_exchange_info",
-            ttl_seconds=6 * 60 * 60,
-            max_stale_seconds=7 * 24 * 60 * 60,
+            ttl_seconds=EXCHANGE_INFO_CACHE_TTL_SECONDS,
+            max_stale_seconds=EXCHANGE_INFO_CACHE_MAX_STALE_SECONDS,
             timeout_seconds=45,
             network_settings=self._get_network_settings(),
         )
         return payload if isinstance(payload, dict) else {}
 
+    def _symbol_info_cache_key(self, config: dict[str, Any] | None = None) -> str:
+        return self.resolved_base_url(config or {}).rstrip("/")
+
+    def _symbol_info_cache_refresh(self, config: dict[str, Any] | None = None) -> None:
+        now = __import__("time").time()
+        cache_key = self._symbol_info_cache_key(config)
+        if (
+            cache_key == self._symbol_info_cache_base_url
+            and now < self._symbol_info_cache_expiry
+            and self._symbol_info_cache
+        ):
+            return
+        info = self._exchange_info(config or {})
+        self._symbol_info_cache = {
+            self.normalize_symbol(item.get("symbol")): item
+            for item in info.get("symbols", [])
+            if isinstance(item, dict)
+        }
+        self._symbol_info_cache_base_url = cache_key
+        self._symbol_info_cache_expiry = now + EXCHANGE_INFO_CACHE_TTL_SECONDS
+
+    def _clear_symbol_cache(self) -> None:
+        self._symbol_info_cache = {}
+        self._symbol_info_cache_expiry = 0.0
+        self._symbol_info_cache_base_url = None
+
     def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
         normalized = self.normalize_symbol(symbol)
-        info = self._exchange_info(config)
-        for item in info.get("symbols", []):
-            if self.normalize_symbol(item.get("symbol")) == normalized:
-                return item
+        self._symbol_info_cache_refresh(config)
+        item = self._symbol_info_cache.get(normalized)
+        if item is not None:
+            return item
         raise ValueError(f"{self.display_name} symbol not found: {normalized}")
 
     def _step_precision(self, step_size: str | float | int | None) -> int:

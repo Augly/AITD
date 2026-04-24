@@ -17,6 +17,9 @@
 
 - 修改 `ExchangeGateway` 抽象方法签名时，必须同步更新所有子类（BinanceGateway, OkxGateway, BybitGateway）以及测试中的 DummyGateway
 - `_GATEWAYS` 是全局单例字典，`_ensure_gateways()` 只在首次访问时初始化
+- Binance 这类带实例级缓存的网关，因为挂在 `_GATEWAYS` 全局单例上，缓存键必须至少包含 `resolved_base_url(config)`；不能只存一份全局 symbol 映射，否则切换自定义 `baseUrl` 会串用旧环境数据
+- `validate_symbol()` 若复用远端元数据缓存，仍要保留原有容错语义：网络/刷新异常时允许回退为 `True`，但在成功拿到 `exchangeInfo` 后，对“格式合法但交易所不存在”的 symbol 必须返回 `False`
+- 如果内存缓存需要与底层 HTTP 文件缓存共享 TTL，优先抽成模块级常量并让实现和测试都引用同一常量，避免双写 `6 * 60 * 60` 导致漂移
 - 构造器参数使用 keyword-only（`*` 分隔）防止位置参数误用
 - OKX `fetch_klines()` 请求 `history-candles` 时，`bar` 表示时间周期（如 `1m`、`1H`），`limit` 表示返回条数；不要把两者语义写反
 - 交易所网关输出 UTC 时间戳时，统一使用 timezone-aware `datetime` API（如 `datetime.now(timezone.utc)`、`datetime.fromtimestamp(..., tz=timezone.utc)`），并在对外字符串中把 `+00:00` 规范化为 `Z`
