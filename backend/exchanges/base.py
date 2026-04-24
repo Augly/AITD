@@ -47,6 +47,20 @@ class ExchangeGateway(ABC):
     def normalize_symbol(self, symbol: str) -> str:
         return str(symbol or "").strip().upper()
 
+    def _cache_policy_for_kline_interval(self, interval: str) -> tuple[int, int]:
+        interval = str(interval or "").lower()
+        if interval == "1m":
+            return 20, 60 * 60
+        if interval == "5m":
+            return 30, 2 * 60 * 60
+        if interval == "15m":
+            return 60, 3 * 60 * 60
+        if interval == "1h":
+            return 5 * 60, 12 * 60 * 60
+        if interval == "4h":
+            return 15 * 60, 48 * 60 * 60
+        return 60, 6 * 60 * 60
+
     @abstractmethod
     def validate_symbol(self, symbol: str) -> bool:
         raise NotImplementedError

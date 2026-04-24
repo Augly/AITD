@@ -36,20 +36,6 @@ class BybitGateway(ExchangeGateway):
         normalized = self.normalize_symbol(symbol)
         return normalized[:-4] if normalized.endswith("USDT") else normalized
 
-    def _cache_policy_for_kline_interval(self, interval: str) -> tuple[int, int]:
-        interval = str(interval or "").lower()
-        if interval == "1m":
-            return 20, 60 * 60
-        if interval == "5m":
-            return 30, 2 * 60 * 60
-        if interval == "15m":
-            return 60, 3 * 60 * 60
-        if interval == "1h":
-            return 5 * 60, 12 * 60 * 60
-        if interval == "4h":
-            return 15 * 60, 48 * 60 * 60
-        return 60, 6 * 60 * 60
-
     def resolved_base_url(self, config: dict[str, Any]) -> str:
         return str(config.get("baseUrl") or self.public_base_url).strip() or self.public_base_url
 
