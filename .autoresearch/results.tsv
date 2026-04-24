@@ -3,3 +3,4 @@
 2026-04-24T00:50:38+08:00	6	P0: API 密钥明文存储且错误信息可能泄露	completed	3	false	100	100	feature/issue-6	
 2026-04-24T01:07:15+08:00	7	P2: 替换废弃 datetime.utcnow() API	completed	3	false	89	89	feature/issue-7	
 2026-04-24T17:04:53+08:00	8	P0: API 密钥明文存储且错误信息可能泄露	completed	3	false	88	88	feature/issue-8	
+2026-04-24T19:25:59+08:00	37	P0: Bybit kline closeTime bug - returns openTime instead	completed	3	false	98	98	feature/issue-37	

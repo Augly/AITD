@@ -1,0 +1,85 @@
+现在我已经完全理解了问题。`parse_klines` 函数在 `backend/utils.py` 中，但当前代码中它缺失了（可能在某个重构中被移除了）。当 `close_time_index=None` 时，函数回退到使用 `openTime` 作为 `closeTime`，而不是正确计算 `closeTime = openTime + interval_ms`。
+
+对于 Bybit 来说，kline 数据不包含 `closeTime` 字段（所以 `close_time_index=None`），需要基于 `openTime` 和 interval 来计算 `closeTime`。
+
+让我查看 Bybit 的 interval_map 来确认 interval 到毫秒的映射。
+
+## 分析总结
+
+**Bug 根因**: 
+- `parse_klines` 函数在 `close_time_index=None` 时，将 `closeTime` 设置为 `openTime`（第 `close_time = row[close_time_index] if close_time_index is not None else open_time`）
+- 正确行为应该是：`closeTime = openTime + interval_ms`
+- 但 `parse_klines` 目前不接收 `interval_ms` 参数
+
+**影响范围**:
+- Bybit (`bybit.py:161`): `close_time_index=None`
+- OKX (`okx.py:322`): `close_time_index=None`  
+- Binance: 不受影响，因为 `close_time_index=6`（Binance API 返回 closeTime）
+
+**修复方案**:
+1. 修改 `parse_klines` 函数，添加 `interval_ms` 参数
+2. 当 `close_time_index=None` 时，使用 `openTime + interval_ms` 计算 `closeTime`
+3. 修改 Bybit 和 OKX 的 `fetch_klines` 方法，传入对应的 `interval_ms`
+4. 更新测试用例
+
+```json
+{
+  "issueNumber": 37,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "修复 parse_klines 函数计算 closeTime 的逻辑",
+      "description": "修改 backend/utils.py 中的 parse_klines 函数，添加 interval_ms 参数。当 close_time_index=None 时，使用 openTime + interval_ms 计算 closeTime，而不是回退到 openTime。",
+      "acceptanceCriteria": [
+        "parse_klines 函数新增 interval_ms 参数（默认值为 None）",
+        "当 close_time_index=None 且 interval_ms 不为 None 时，closeTime = openTime + interval_ms",
+        "当 close_time_index=None 且 interval_ms 为 None 时，保持原有回退行为（closeTime = openTime）以兼容旧调用",
+        "当 close_time_index 不为 None 时，保持原有行为（从 row 中读取 closeTime）"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "更新 Bybit fetch_klines 传入 interval_ms",
+      "description": "修改 backend/exchanges/bybit.py 中的 fetch_klines 方法，根据 interval 参数计算对应的毫秒值，并传给 parse_klines 的 interval_ms 参数。",
+      "acceptanceCriteria": [
+        "Bybit fetch_klines 根据 interval（如 '1m', '5m', '1h'）计算对应的 interval_ms",
+        "调用 parse_klines 时传入 interval_ms 参数",
+        "所有支持的 interval 都正确映射到毫秒值"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "更新 OKX fetch_klines 传入 interval_ms",
+      "description": "修改 backend/exchanges/okx.py 中的 fetch_klines 方法，根据 interval 参数计算对应的毫秒值，并传给 parse_klines 的 interval_ms 参数。",
+      "acceptanceCriteria": [
+        "OKX fetch_klines 根据 interval（如 '1m', '5m', '1h'）计算对应的 interval_ms",
+        "调用 parse_klines 时传入 interval_ms 参数",
+        "所有支持的 interval 都正确映射到毫秒值"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "更新测试用例验证 closeTime 计算",
+      "description": "更新 tests/test_parse_klines.py 中的测试用例，验证当 close_time_index=None 时，parse_klines 使用 interval_ms 正确计算 closeTime。同时修复当前测试因 parse_klines 缺失而失败的问题。",
+      "acceptanceCriteria": [
+        "Bybit 测试用例验证 closeTime = openTime + interval_ms",
+        "OKX 测试用例验证 closeTime = openTime + interval_ms",
+        "Binance 测试用例不受影响（closeTime 仍从 row 读取）",
+        "所有测试通过"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```

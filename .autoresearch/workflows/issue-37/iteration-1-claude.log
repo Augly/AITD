@@ -1,0 +1,33 @@
+`binance.py` 的 `fetch_klines` 调用 `_parse_klines`，它只传了 `rows`，没有传其他参数。所以会使用所有默认值：`close_time_index=None`, `interval_ms=None`，保持原有回退行为。
+
+所有修改完成，测试全部通过。让我总结实现结果。
+
+---
+
+## 实现总结
+
+### 修改的文件
+
+1. **`backend/utils.py`** — 新增 `parse_klines` 函数
+   - 支持 `interval_ms` 参数（默认 `None`）
+   - 当 `close_time_index=None` 且 `interval_ms` 不为 `None` 时，`closeTime = openTime + interval_ms`
+   - 当 `close_time_index=None` 且 `interval_ms=None` 时，保持原有回退行为 `closeTime = openTime`
+   - 当 `close_time_index` 不为 `None` 时，从 `row` 中读取 `closeTime`
+
+2. **`backend/exchanges/bybit.py`** — 修改 `fetch_klines` 方法
+   - 根据 `resolved_interval` 计算 `interval_ms`
+   - 传入 `interval_ms` 到 `parse_klines`
+
+3. **`backend/test_utils.py`** — 新增测试文件
+   - 10 个测试用例覆盖所有场景
+
+### 测试验证
+
+- ✅ 新增 10 个测试全部通过
+- ✅ 现有 33 个测试全部通过，无回归
+
+## Learnings
+
+- **模式**: 项目中的 `parse_klines` 函数之前缺失实现，但多个交易所文件都导入了它。需要在 `utils.py` 中补齐实现。
+- **踩坑**: Bybit API 的 kline 数据不包含 `closeTime` 字段，之前代码回退到 `openTime`，导致所有时间逻辑出错。
+- **经验**: 添加新参数时保持向后兼容（默认 `None`），确保不影响其他交易所的调用。

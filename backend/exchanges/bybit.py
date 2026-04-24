@@ -154,12 +154,15 @@ class BybitGateway(ExchangeGateway):
             max_stale_seconds=max_stale_seconds,
         )
         rows = result.get("list")
+        interval_minutes = int(resolved_interval)
+        interval_ms = interval_minutes * 60 * 1000
         return parse_klines(
             rows if isinstance(rows, list) else [],
             reverse=True,
             quote_volume_index=6,
             close_time_index=None,
             min_length=7,
+            interval_ms=interval_ms,
         )
 
     def live_execution_status(
