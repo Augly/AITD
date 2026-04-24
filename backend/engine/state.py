@@ -5,7 +5,7 @@ from typing import Any
 
 from ..config import read_trading_settings
 from ..exchanges import base_asset_for_symbol
-from ..utils import DATA_DIR, current_run_date, now_iso, num, read_json_locked, write_json_locked
+from ..utils import DATA_DIR, current_run_date, now_iso, num, read_json, write_json
 
 
 STATE_PATH = DATA_DIR / "trading_agent_state.json"
@@ -207,7 +207,7 @@ def normalize_decision(decision: dict[str, Any]) -> dict[str, Any]:
 
 def read_trading_state(settings: dict[str, Any] | None = None) -> dict[str, Any]:
     settings = settings or read_trading_settings()
-    saved = read_json_locked(STATE_PATH, {})
+    saved = read_json(STATE_PATH, {})
     state = default_state(settings)
     for key in ("paper", "live"):
         source = "exchange" if key == "live" else "paper"
@@ -254,11 +254,11 @@ def write_trading_state(state: dict[str, Any]) -> dict[str, Any]:
         payload[key]["closedTrades"] = [normalize_trade(item) for item in payload[key].get("closedTrades", [])][-400:]
         payload[key]["decisions"] = [normalize_decision(item) for item in payload[key].get("decisions", [])][-40:]
     payload["updatedAt"] = now_iso()
-    write_json_locked(STATE_PATH, payload)
+    write_json(STATE_PATH, payload)
     return payload
 
 
 def archive_decision(decision: dict[str, Any]) -> None:
     run_date = current_run_date()
     path = DECISIONS_DIR / run_date / f"{decision['id']}.json"
-    write_json_locked(path, decision)
+    write_json(path, decision)

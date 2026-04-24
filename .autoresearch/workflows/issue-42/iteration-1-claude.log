@@ -1,0 +1,31 @@
+所有 UTC 时间戳生成均使用 `timezone.utc` 参数，符合 Python 3.12+ 推荐做法。
+
+## 子任务 T-001 完成报告
+
+**状态**: 已完成 ✅
+
+### 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| `grep -r 'utcnow()'` 在 Python 源码中 | **空结果** ✅ |
+| 所有时间戳使用 timezone-aware API | **全部通过** ✅ |
+
+### 当前代码状态
+
+- `backend/utils.py:22` — `datetime.now(timezone.utc)` ✅
+- `backend/market.py:390` — `datetime.now(timezone.utc)` ✅
+- `backend/server.py:368` — `datetime.fromtimestamp(due_ts, tz=timezone.utc)` ✅
+- `backend/exchanges/okx.py:95` — `datetime.now(timezone.utc)` ✅
+
+### 结论
+
+`datetime.utcnow()` 的替换工作已在之前的 issue-7 和 issue-13 迭代中完成。当前代码库中不存在任何 `utcnow()` 调用，所有 UTC 时间生成均使用 `timezone.utc` 参数。
+
+---
+
+## Learnings
+
+- **模式**: 此 Issue 的代码修复已在前期迭代中完成，当前只需验证确认。
+- **经验**: 对于标记为"已修复"的 Issue，应先做全量扫描确认，避免重复修改。
+- **踩坑**: Issue 描述中的行号（`utils.py:20`, `market.py:396`, `server.py:360`）是历史快照，实际代码行号已因其他修改发生偏移（现为 `utils.py:22`, `market.py:390`, `server.py:368`）。

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import json
 import socket
 import threading
@@ -711,11 +712,32 @@ class TradingAgentHandler(BaseHTTPRequestHandler):
             return _json_response(self, {"error": str(error)}, status=500)
 
     def _serve_static(self, request_path: str) -> None:
-        relative = "index.html" if request_path == "/" else request_path.lstrip("/")
-        file_path = (DASHBOARD_DIR / relative).resolve()
+        relative = Path("index.html") if request_path == "/" else Path(request_path.lstrip("/"))
+        requested_path = DASHBOARD_DIR / relative
         dashboard_root = DASHBOARD_DIR.resolve()
+        file_path = requested_path.resolve()
+
+        # Reject requests that traverse any symlink in the original path chain.
+        current_path = DASHBOARD_DIR
+        if current_path.is_symlink():
+            return _text_response(self, "Forbidden", status=403)
+        for part in relative.parts:
+            current_path = current_path / part
+            if current_path.is_symlink():
+                return _text_response(self, "Forbidden", status=403)
+
+        # Secondary validation using os.path.commonpath
+        try:
+            common = os.path.commonpath([str(file_path), str(dashboard_root)])
+            if common != str(dashboard_root):
+                return _text_response(self, "Forbidden", status=403)
+        except ValueError:
+            return _text_response(self, "Forbidden", status=403)
+
+        # Original parents check (defense in depth)
         if dashboard_root not in file_path.parents and file_path != dashboard_root:
             return _text_response(self, "Forbidden", status=403)
+
         if not file_path.exists() or not file_path.is_file():
             return _text_response(self, "Not found", status=404)
         payload = file_path.read_bytes()

@@ -1,0 +1,48 @@
+{
+  "issueNumber": 39,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "Add symlink check and os.path.commonpath validation to _serve_static",
+      "description": "Fix the path traversal vulnerability in backend/server.py _serve_static method. Add symlink detection: reject requests where the resolved file_path or any of its parent directories is a symlink. Add secondary validation using os.path.commonpath to ensure the resolved file path is strictly within DASHBOARD_DIR. Update the existing parents check to work alongside these new validations.",
+      "acceptanceCriteria": [
+        "_serve_static rejects paths where file_path.resolve() contains symlinks",
+        "_serve_static uses os.path.commonpath for secondary path containment validation",
+        "Normal static file serving (non-symlink files within DASHBOARD_DIR) continues to work",
+        "Path traversal attempts (e.g., ../../../etc/passwd) are still blocked with 403"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "Add unit tests for path traversal and symlink bypass scenarios",
+      "description": "Create comprehensive tests in tests/test_server_auth.py (or a new test file) covering: (1) normal static file access within DASHBOARD_DIR, (2) path traversal attempts with ../ sequences, (3) symlink-based path traversal bypass attempts, (4) edge cases like accessing DASHBOARD_DIR itself, (5) paths that pass parents check but fail commonpath check. Use temporary directories and mock symlinks to avoid depending on the real filesystem layout.",
+      "acceptanceCriteria": [
+        "Tests cover normal file access within DASHBOARD_DIR",
+        "Tests cover ../ path traversal attempts returning 403",
+        "Tests cover symlink-based bypass attempts returning 403",
+        "Tests cover edge case where file_path == dashboard_root",
+        "All tests pass with pytest"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "Run full test suite and verify no regressions",
+      "description": "Run the complete test suite (pytest) to ensure the changes to _serve_static do not break any existing functionality. Run lint/typecheck if available. Verify all existing server auth tests still pass.",
+      "acceptanceCriteria": [
+        "All existing tests in tests/test_server_auth.py pass",
+        "All tests in the full test suite pass",
+        "Lint/typecheck passes with no new errors",
+        "No regressions in static file serving behavior"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

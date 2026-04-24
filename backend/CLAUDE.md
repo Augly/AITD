@@ -35,3 +35,9 @@
 - `backend.utils.parse_klines(...)` 的默认兼容行为不能轻易改动：默认读取 `closeTime` 索引 `6`、`quoteVolume` 索引 `7`、`min_length=5`
 - 新增交易所特化行为时，优先通过可选参数扩展；像 Bybit 这类没有 `closeTime` 的数据源，应显式传 `close_time_index=None`，再用 `interval_ms` 计算 `closeTime`
 - 旧兼容语义要保留：跳过 `close` 无效的行，`openTime` 统一转 `int`，`quoteVolume` 在主索引缺失时可回退到索引 `6`
+
+### 静态文件服务安全约定
+
+- `backend/server.py` 的 `_serve_static(...)` 必须按“原始请求路径逐段 symlink 检查 + `resolve()` 后 `commonpath` containment + `parents` 兜底校验”的顺序做纵深防御
+- 不能只检查 `resolve()` 之后的路径是否含 symlink；一旦先 `resolve()`，请求路径里原本经过的 symlink 会被折叠，导致站内 alias 路径绕过检测
+- 静态文件测试要覆盖两类 symlink：指向站外目标，以及指向站内真实目录的 alias；后者同样必须返回 `403`

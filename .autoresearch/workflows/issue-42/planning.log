@@ -1,0 +1,57 @@
+经过代码审查，我发现 Issue #42 中提到的 `datetime.utcnow()` 在当前代码库中**已经被修复**。具体情况如下：
+
+**当前代码状态：**
+
+| 文件 | Issue 提到的行号 | 当前状态 |
+|------|----------------|----------|
+| `backend/utils.py` | 第20行 | 使用 `datetime.now(timezone.utc)` ✅ |
+| `backend/market.py` | 第396行 | 使用 `datetime.now(timezone.utc)` ✅ |
+| `backend/server.py` | 第360行 | 使用 `datetime.fromtimestamp(..., tz=timezone.utc)` ✅ |
+
+所有三个位置都已经使用了 Python 3.12+ 推荐的新 API，没有遗留的 `datetime.utcnow()` 调用。
+
+**结论**：此 Issue 的内容已经在之前的某个提交中被修复，当前分支无需再做代码改动。但为确保没有遗漏，建议运行一次全代码库搜索确认。
+
+```json
+{
+  "issueNumber": 42,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "全代码库扫描确认无遗留 utcnow()",
+      "description": "运行 grep 搜索整个项目，确认不存在任何 datetime.utcnow() 的调用。包括 backend 目录及所有子目录、测试文件、脚本等。",
+      "acceptanceCriteria": [
+        "grep -r 'utcnow()' 项目根目录 返回空结果",
+        "确认所有时间戳生成均使用 timezone-aware 的 datetime API"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "运行测试验证时间相关功能正常",
+      "description": "运行项目测试套件，确保时间戳生成、ISO 格式化、时区处理等功能在替换后仍然正常工作。",
+      "acceptanceCriteria": [
+        "pytest 全部通过（或项目对应测试命令）",
+        "与时间格式化相关的测试用例无失败"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "更新 CLAUDE.md 记录 timezone-aware datetime 约定",
+      "description": "在 backend/CLAUDE.md 中添加一条约定：项目统一使用 datetime.now(timezone.utc) 生成 UTC 时间，禁止使用已废弃的 datetime.utcnow()。",
+      "acceptanceCriteria": [
+        "CLAUDE.md 中新增 datetime 使用约定条目",
+        "约定明确说明使用 timezone-aware API 而非 naive datetime"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
