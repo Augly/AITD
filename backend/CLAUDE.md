@@ -21,3 +21,17 @@
 - `backend/engine/` 是 Python 包（含 `__init__.py`），`backend/engine_core.py` 是普通模块
 - Python 导入优先级：包 > 模块，因此不能同时存在 `engine.py` 和 `engine/` 目录
 - 状态函数（如 `normalize_position`）在 `state.py` 和 `engine_core.py` 中都有使用，修改时需同步检查
+
+### 沙箱执行约定
+
+- `backend/sandbox.py` 不再使用同进程线程版 `exec`，动态代码必须放到独立子进程里运行，超时后由父进程强制终止
+- 沙箱执行前会做 AST 校验，禁止访问以下反射入口：以下划线开头的属性，以及包含 `globals`、`builtins`、`subclasses`、`mro`、`frame`、`code` 的危险属性
+- 默认白名单仅允许纯计算/数据模块（如 `json`、`math`、`re`、`datetime`、`itertools`），不要把 `os`、`sys`、`pathlib` 这类能触达系统资源的模块加入默认白名单
+- 需要在沙箱里调用动态函数时，优先使用 `call_restricted_function(...)`，不要把函数对象从沙箱进程带回父进程
+- 动态候选池脚本统一定义 `load_candidate_symbols(context)`，由 `call_restricted_function(...)` 传入 `context`，并从返回值中的 `result` / `stdout` 读取执行结果与打印输出
+
+### Kline 解析约定
+
+- `backend.utils.parse_klines(...)` 的默认兼容行为不能轻易改动：默认读取 `closeTime` 索引 `6`、`quoteVolume` 索引 `7`、`min_length=5`
+- 新增交易所特化行为时，优先通过可选参数扩展；像 Bybit 这类没有 `closeTime` 的数据源，应显式传 `close_time_index=None`，再用 `interval_ms` 计算 `closeTime`
+- 旧兼容语义要保留：跳过 `close` 无效的行，`openTime` 统一转 `int`，`quoteVolume` 在主索引缺失时可回退到索引 `6`

@@ -93,6 +93,50 @@ def sha1_hex(value: str) -> str:
     return sha1(value.encode("utf-8")).hexdigest()
 
 
+def parse_klines(
+    rows: list[list[Any]] | None,
+    *,
+    reverse: bool = False,
+    quote_volume_index: int = 7,
+    close_time_index: int | None = 6,
+    min_length: int = 5,
+    interval_ms: int | None = None,
+) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    iterable = reversed(rows) if reverse else rows
+    for row in iterable or []:
+        if not isinstance(row, (list, tuple)) or len(row) < min_length:
+            continue
+        close_value = num(row[4])
+        if close_value is None:
+            continue
+        open_time = int(num(row[0]) or 0)
+        if close_time_index is not None and close_time_index < len(row):
+            close_time = row[close_time_index]
+        elif interval_ms is not None:
+            close_time = open_time + interval_ms
+        else:
+            close_time = open_time
+        quote_volume = None
+        if quote_volume_index < len(row):
+            quote_volume = num(row[quote_volume_index])
+        if quote_volume is None and quote_volume_index != 6 and len(row) > 6:
+            quote_volume = num(row[6])
+        parsed.append(
+            {
+                "openTime": open_time,
+                "closeTime": close_time,
+                "open": num(row[1]),
+                "high": num(row[2]),
+                "low": num(row[3]),
+                "close": close_value,
+                "volume": num(row[5]),
+                "quoteVolume": quote_volume,
+            }
+        )
+    return parsed
+
+
 def parse_json_loose(raw_text: str) -> Any:
     text = str(raw_text or "").strip()
     if not text:
@@ -108,4 +152,3 @@ def parse_json_loose(raw_text: str) -> Any:
     if brace_match:
         return json.loads(brace_match.group(1))
     raise ValueError("could not find JSON object in response")
-

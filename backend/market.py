@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import contextlib
-import io
 import math
 import time
 from pathlib import Path
@@ -10,7 +8,8 @@ from typing import Any
 from .config import PROMPT_KLINE_FEED_OPTIONS, read_candidate_source_code, read_fixed_universe, read_network_settings, read_trading_settings
 from .exchanges.catalog import DEFAULT_EXCHANGE_ID, normalize_exchange_id
 from .exchanges import get_active_exchange_gateway
-from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, parse_klines, read_json, write_json
+from .sandbox import call_restricted_function
+from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, read_json, write_json
 
 
 LEGACY_LATEST_SCAN_PATH = DATA_DIR / "scans" / "latest.json"
@@ -121,11 +120,6 @@ def resolve_candidate_symbols(
     source_code = str(code_override if code_override is not None else read_candidate_source_code())
     function_name = str(dynamic_source.get("functionName") or "load_candidate_symbols").strip() or "load_candidate_symbols"
     latest_scan_path = str(_latest_scan_path(gateway.exchange_id))
-    scope: dict[str, Any] = {
-        "__builtins__": __builtins__,
-        "scan_path": latest_scan_path,
-        "latest_scan_path": latest_scan_path,
-    }
     context = {
         "project_root": str(ROOT),
         "config_dir": str(CONFIG_DIR),
@@ -138,14 +132,14 @@ def resolve_candidate_symbols(
         "scan_path": latest_scan_path,
         "latest_scan_path": latest_scan_path,
     }
-    stdout_buffer = io.StringIO()
     started = time.perf_counter()
-    with contextlib.redirect_stdout(stdout_buffer):
-        exec(source_code, scope)
-        func = scope.get(function_name)
-        if not callable(func):
-            raise ValueError(f"Dynamic candidate source must define `{function_name}(context)`.")
-        result = func(context)
+    sandbox_result = call_restricted_function(
+        source_code,
+        function_name,
+        function_args=[context],
+        timeout_seconds=30.0,
+    )
+    result = sandbox_result["result"]
     duration_ms = int((time.perf_counter() - started) * 1000)
     note = None
     if isinstance(result, dict):
@@ -161,7 +155,7 @@ def resolve_candidate_symbols(
         "enabled": True,
         "symbols": symbols,
         "invalidSymbols": invalid_symbols,
-        "stdout": stdout_buffer.getvalue().strip(),
+        "stdout": str(sandbox_result.get("stdout") or "").strip(),
         "note": note,
         "durationMs": duration_ms,
         "functionName": function_name,
@@ -415,9 +409,24 @@ def refresh_candidate_pool(exchange_id: str | None = None) -> dict[str, Any]:
     return payload
 
 
-def parse_klines(rows: list[list[Any]] | None) -> list[dict[str, Any]]:
+def parse_klines(
+    rows: list[list[Any]] | None,
+    *,
+    reverse: bool = False,
+    quote_volume_index: int = 7,
+    close_time_index: int | None = 6,
+    min_length: int = 5,
+    interval_ms: int | None = None,
+) -> list[dict[str, Any]]:
     from .utils import parse_klines as _parse_klines
-    return _parse_klines(rows)
+    return _parse_klines(
+        rows,
+        reverse=reverse,
+        quote_volume_index=quote_volume_index,
+        close_time_index=close_time_index,
+        min_length=min_length,
+        interval_ms=interval_ms,
+    )
 
 
 def average(values: list[float | None]) -> float | None:
