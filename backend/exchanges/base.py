@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
-from urllib.parse import urlencode
 
 
 class ConfigProvider(Protocol):
@@ -61,17 +60,6 @@ class ExchangeGateway(ABC):
         if interval == "4h":
             return 15 * 60, 48 * 60 * 60
         return 60, 6 * 60 * 60
-
-    def _query(self, base_url: str, endpoint: str, params: dict[str, Any] | None = None) -> str:
-        filtered = {
-            key: value
-            for key, value in (params or {}).items()
-            if value not in (None, "", [], {})
-        }
-        query = urlencode(filtered)
-        if not query:
-            return f"{base_url.rstrip('/')}{endpoint}"
-        return f"{base_url.rstrip('/')}{endpoint}?{query}"
 
     @abstractmethod
     def validate_symbol(self, symbol: str) -> bool:

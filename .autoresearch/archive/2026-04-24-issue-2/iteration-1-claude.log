@@ -1,0 +1,29 @@
+T-001 子任务已完成。以下是修改总结：
+
+## 修改内容
+
+**文件**: `backend/engine/state.py`
+
+| 位置 | 修改前 | 修改后 |
+|------|--------|--------|
+| 导入 (L8) | `read_json, write_json` | `read_json_locked, write_json_locked` |
+| `read_trading_state` (L210) | `read_json(STATE_PATH, {})` | `read_json_locked(STATE_PATH, {})` |
+| `write_trading_state` (L257) | `write_json(STATE_PATH, payload)` | `write_json_locked(STATE_PATH, payload)` |
+| `archive_decision` (L264) | `write_json(path, decision)` | `write_json_locked(path, decision)` |
+
+## 验收条件检查
+
+- [x] state.py 的 import 包含 `read_json_locked` 和 `write_json_locked`
+- [x] `read_trading_state` 调用 `read_json_locked` 替代 `read_json`
+- [x] `write_trading_state` 调用 `write_json_locked` 替代 `write_json`
+- [x] `archive_decision` 也替换为 `write_json_locked`（同一日期+ID 的决策并发写入也会冲突）
+
+## 验证结果
+
+- Python 语法检查通过
+- 全部 65 个测试通过（含 16 个文件锁专项测试）
+
+## Learnings
+
+- `backend/utils.py` 已提供成熟的 `read_json_locked` / `write_json_locked`，使用 `filelock.FileLock` 实现跨进程锁，写入采用 `tempfile.mkstemp` + `os.replace` 原子写策略
+- `archive_decision` 虽然写入的是按日期和 ID 分片的文件，但同一决策 ID 的并发归档仍可能冲突，一并替换为带锁版本更稳妥
