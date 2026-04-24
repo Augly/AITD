@@ -1,0 +1,46 @@
+{
+  "issueNumber": 38,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "修复 OKX fetch_klines 参数名 bug",
+      "description": "修改 backend/exchanges/okx.py 中 fetch_klines 方法的 API 请求参数：将控制 kline 返回条数的参数从 `limit` 改为 `bar`（根据 OKX API 规范，`bar` 是控制条数的参数名）。同时确保参数值经过 clamp 限制在有效范围内。",
+      "acceptanceCriteria": [
+        "okx.py fetch_klines 方法中传递给 _public_get_data 的参数使用正确的参数名",
+        "参数值仍经过 int(clamp(limit, 1, 300)) 处理确保有效性",
+        "修改后代码风格与项目一致"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "添加 OKX fetch_klines 单元测试",
+      "description": "为 OKX fetch_klines 方法添加单元测试，验证参数传递正确性。测试应 mock _public_get_data 方法，验证调用时传递的参数名和值是否正确。",
+      "acceptanceCriteria": [
+        "测试验证 fetch_klines 传递的参数包含正确的条数控制参数名",
+        "测试覆盖正常情况和边界情况（limit=1, limit=300, limit>300 被 clamp）",
+        "测试使用 pytest 编写，符合项目测试规范",
+        "测试文件放置在 tests/ 目录下"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "运行测试和 lint 验证",
+      "description": "运行项目的测试和 lint 检查，确保修改没有引入新的问题。包括运行 pytest 和相关 lint 工具。",
+      "acceptanceCriteria": [
+        "所有现有测试通过",
+        "新增测试通过",
+        "lint 检查无新增错误",
+        "代码类型检查通过"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
