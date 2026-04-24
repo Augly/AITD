@@ -1,0 +1,61 @@
+{
+  "issueNumber": 4,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "创建批量获取 candidates live context 的函数",
+      "description": "在 backend/market.py 中创建新的批量函数 `fetch_candidates_live_context(symbols, prompt_kline_feeds, exchange_id)`，该函数一次性调用 `fetch_all_tickers_24h()` 和 `fetch_all_premium_index()` 获取所有 symbol 的数据，构建按 symbol 索引的查找字典，然后仅对 klines 进行逐 symbol 请求。参考 `refresh_candidate_pool()` 中批量 API 的使用模式。保持 `fetch_candidate_live_context` 单 symbol 函数不变以维持向后兼容。",
+      "acceptanceCriteria": [
+        "新函数 `fetch_candidates_live_context` 存在且接受 symbol 列表参数",
+        "函数内部只调用一次 `fetch_all_tickers_24h()` 和一次 `fetch_all_premium_index()`",
+        "返回结构与现有 `_fetch_live_contexts_for_exchange` 期望的格式兼容",
+        "单 symbol 函数 `fetch_candidate_live_context` 保持不变"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "修改 engine_core 使用批量函数替代 N+1 调用",
+      "description": "修改 backend/engine_core.py 中的 `_fetch_live_contexts_for_exchange` 函数，使其调用新创建的 `fetch_candidates_live_context` 批量函数，替代原有的 ThreadPoolExecutor + 逐 symbol `fetch_candidate_live_context` 模式。移除或简化 ThreadPoolExecutor 逻辑（kline 请求仍可能需要并发）。",
+      "acceptanceCriteria": [
+        "`_fetch_live_contexts_for_exchange` 调用批量函数而非逐 symbol 循环",
+        "HTTP 请求数量显著减少（从 N*2 降到 2）",
+        "错误处理保持等价（单个 symbol 失败不影响整体）",
+        "返回类型和结构与修改前一致"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "编写批量函数的单元测试",
+      "description": "为 `fetch_candidates_live_context` 编写单元测试，mock 交易所网关的 `fetch_all_tickers_24h` 和 `fetch_all_premium_index` 方法，验证批量获取逻辑正确、返回结构符合预期、错误处理行为正确。",
+      "acceptanceCriteria": [
+        "测试覆盖正常情况：多个 symbol 批量获取成功",
+        "测试覆盖边界情况：空 symbol 列表、部分 symbol 无数据",
+        "测试覆盖错误情况：批量 API 失败时的降级行为",
+        "测试使用 mock 而非真实 API 调用"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-004",
+      "title": "运行测试和 lint 验证",
+      "description": "运行项目的测试套件和 lint 检查，确保修改未引入回归问题。验证 engine_core 的集成行为正常。",
+      "acceptanceCriteria": [
+        "所有现有测试继续通过",
+        "新增测试通过",
+        "lint 无新增错误",
+        "Python 类型检查通过（如有配置）"
+      ],
+      "priority": 4,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

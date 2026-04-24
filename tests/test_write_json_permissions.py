@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.utils import write_json
+from backend.utils import read_json, write_json
 
 
 class TestWriteJsonPermissions(unittest.TestCase):
@@ -64,6 +64,46 @@ class TestWriteJsonPermissions(unittest.TestCase):
 
         mode = stat.S_IMODE(path.stat().st_mode)
         self.assertEqual(mode, 0o600)
+
+    def test_read_json_corrects_permissive_live_trading(self) -> None:
+        path = self.tmp_path / "live_trading.json"
+        path.write_text('{"apiKey": "secret"}', encoding="utf-8")
+        os.chmod(path, 0o644)
+
+        result = read_json(path, {})
+
+        self.assertEqual(result.get("apiKey"), "secret")
+        mode = stat.S_IMODE(path.stat().st_mode)
+        self.assertEqual(mode, 0o600)
+
+    def test_read_json_corrects_permissive_llm_provider(self) -> None:
+        path = self.tmp_path / "llm_provider.json"
+        path.write_text('{"apiKey": "sk-test"}', encoding="utf-8")
+        os.chmod(path, 0o755)
+
+        result = read_json(path, {})
+
+        self.assertEqual(result.get("apiKey"), "sk-test")
+        mode = stat.S_IMODE(path.stat().st_mode)
+        self.assertEqual(mode, 0o600)
+
+    def test_read_json_does_not_touch_non_sensitive_files(self) -> None:
+        path = self.tmp_path / "dashboard_settings.json"
+        path.write_text('{"timezone": "UTC"}', encoding="utf-8")
+        os.chmod(path, 0o644)
+
+        result = read_json(path, {})
+
+        self.assertEqual(result.get("timezone"), "UTC")
+        mode = stat.S_IMODE(path.stat().st_mode)
+        self.assertEqual(mode, 0o644)
+
+    def test_read_json_returns_default_when_file_missing(self) -> None:
+        path = self.tmp_path / "live_trading.json"
+
+        result = read_json(path, {"default": True})
+
+        self.assertEqual(result, {"default": True})
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import stat
 from hashlib import sha1
 from pathlib import Path
 from typing import Any
@@ -25,14 +26,22 @@ def current_run_date(timezone: str = "Asia/Shanghai") -> str:
     return datetime.now(ZoneInfo(timezone)).strftime("%Y-%m-%d")
 
 
+SENSITIVE_CONFIG_FILES = {"live_trading.json", "llm_provider.json"}
+
+
+def _ensure_sensitive_file_permission(path: Path) -> None:
+    if path.name in SENSITIVE_CONFIG_FILES and path.exists():
+        current_mode = stat.S_IMODE(path.stat().st_mode)
+        if current_mode != 0o600:
+            os.chmod(path, 0o600)
+
+
 def read_json(path: Path, default: Any = None) -> Any:
     try:
+        _ensure_sensitive_file_permission(path)
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
-
-
-SENSITIVE_CONFIG_FILES = {"live_trading.json", "llm_provider.json"}
 
 
 def write_json(path: Path, payload: Any) -> None:
