@@ -1,0 +1,49 @@
+{
+  "issueNumber": 8,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "API 密钥配置文件设置 600 权限并验证",
+      "description": "确保 live_trading.json 和 llm_provider.json 在创建、写入时设置 600 权限（仅所有者可读写）。检查现有文件权限，在读取配置时验证权限是否正确，若权限过于宽松则修正。修改 _with_default_file 和 write_json 中的权限处理逻辑，确保新创建的文件和已存在的文件都符合安全要求。",
+      "acceptanceCriteria": [
+        "live_trading.json 和 llm_provider.json 文件权限为 600（rw-------）",
+        "文件创建时自动设置 600 权限",
+        "文件已存在但权限不正确时，在写入时修正权限",
+        "相关测试验证权限设置逻辑正确"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": true
+    },
+    {
+      "id": "T-002",
+      "title": "返回前端的 API Key 做脱敏处理",
+      "description": "在 server.py 的 API 响应中，对返回给前端的 live_trading_config 和 llm_provider 数据中的 apiKey、apiSecret、apiPassphrase 字段进行脱敏处理。脱敏规则：若字段非空，保留前 4 位和后 4 位，中间用 **** 替代；若长度不足 8 位，全部显示为 ****。确保后端内部使用（如交易所网关调用）仍使用原始值，仅 API 响应层做脱敏。",
+      "acceptanceCriteria": [
+        "GET /api/trading/live-config 返回的 apiKey/apiSecret/apiPassphrase 已脱敏",
+        "GET /api/trading/provider 返回的 apiKey 已脱敏",
+        "脱敏规则正确：长度>=8 时保留前后4位，不足8位时显示 ****",
+        "后端内部调用（如交易所 API 请求）仍使用原始未脱敏的密钥",
+        "新增脱敏工具函数并附带单元测试"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "server.py 错误处理返回脱敏后的错误信息",
+      "description": "修改 server.py 中 _handle 方法的异常处理逻辑（第 708-710 行），避免将原始错误字符串直接返回给前端。实现错误信息脱敏函数，过滤掉可能包含的敏感信息：API 密钥、URL 中的凭证、完整的异常堆栈等。返回给前端的错误信息应简洁且不含敏感数据，同时将完整错误记录到服务端日志中。",
+      "acceptanceCriteria": [
+        "API 异常响应不再包含原始错误字符串中的敏感信息",
+        "错误响应中过滤 API 密钥、URL 凭证等敏感内容",
+        "完整错误信息仍记录到服务端日志供排查",
+        "返回前端的错误信息简洁、用户友好",
+        "新增错误脱敏函数并附带单元测试"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

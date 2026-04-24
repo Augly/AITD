@@ -4,14 +4,12 @@ import json
 import math
 import os
 import re
-import tempfile
+import stat
 from hashlib import sha1
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 from datetime import datetime, timezone
-
-from filelock import FileLock
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,14 +26,22 @@ def current_run_date(timezone: str = "Asia/Shanghai") -> str:
     return datetime.now(ZoneInfo(timezone)).strftime("%Y-%m-%d")
 
 
+SENSITIVE_CONFIG_FILES = {"live_trading.json", "llm_provider.json"}
+
+
+def _ensure_sensitive_file_permission(path: Path) -> None:
+    if path.name in SENSITIVE_CONFIG_FILES and path.exists():
+        current_mode = stat.S_IMODE(path.stat().st_mode)
+        if current_mode != 0o600:
+            os.chmod(path, 0o600)
+
+
 def read_json(path: Path, default: Any = None) -> Any:
     try:
+        _ensure_sensitive_file_permission(path)
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
-
-
-SENSITIVE_CONFIG_FILES = {"live_trading.json", "llm_provider.json"}
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -43,38 +49,6 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if path.name in SENSITIVE_CONFIG_FILES:
         os.chmod(path, 0o600)
-
-
-def _lock_path_for(path: Path) -> Path:
-    return path.with_suffix(path.suffix + ".lock")
-
-
-def read_json_locked(path: Path, default: Any = None) -> Any:
-    lock = FileLock(str(_lock_path_for(path)))
-    try:
-        with lock:
-            return read_json(path, default)
-    except Exception:
-        return default
-
-
-def write_json_locked(path: Path, payload: Any) -> None:
-    lock = FileLock(str(_lock_path_for(path)))
-    with lock:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(
-            dir=path.parent, prefix=path.name + ".tmp", suffix=".json"
-        )
-        try:
-            os.write(fd, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8") + b"\n")
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        os.replace(tmp, path)
-        if path.name in SENSITIVE_CONFIG_FILES:
-            os.chmod(path, 0o600)
-        else:
-            os.chmod(path, 0o666 & ~os.umask(0))
 
 
 def num(value: Any) -> float | None:
@@ -134,40 +108,4 @@ def parse_json_loose(raw_text: str) -> Any:
     if brace_match:
         return json.loads(brace_match.group(1))
     raise ValueError("could not find JSON object in response")
-
-
-def parse_klines(
-    rows: list[list[Any]] | None,
-    *,
-    reverse: bool = False,
-    quote_volume_index: int = 7,
-    close_time_index: int | None = 6,
-    min_length: int = 5,
-) -> list[dict[str, Any]]:
-    parsed: list[dict[str, Any]] = []
-    iterable = reversed(rows) if reverse else rows
-    for row in iterable or []:
-        if not isinstance(row, list) or len(row) < min_length:
-            continue
-        close_value = num(row[4])
-        if close_value is None:
-            continue
-        open_time = int(num(row[0]) or 0)
-        close_time = row[close_time_index] if close_time_index is not None else open_time
-        quote_volume = num(row[quote_volume_index])
-        if quote_volume is None and quote_volume_index != 6:
-            quote_volume = num(row[6])
-        parsed.append(
-            {
-                "openTime": open_time,
-                "open": num(row[1]),
-                "high": num(row[2]),
-                "low": num(row[3]),
-                "close": close_value,
-                "volume": num(row[5]),
-                "closeTime": close_time,
-                "quoteVolume": quote_volume,
-            }
-        )
-    return parsed
 

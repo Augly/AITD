@@ -1,0 +1,35 @@
+全部 53 个测试通过。子任务 T-001 实现完成。
+
+---
+
+## 实现总结
+
+### 修改的文件
+
+**`backend/utils.py`**:
+- 添加 `import stat`
+- 新增 `_ensure_sensitive_file_permission()` 辅助函数：在读取敏感配置文件时，检查并修正过于宽松的权限
+- 修改 `read_json()`：在读取文件内容前调用权限检查函数，实现"读取时验证并修正权限"
+
+**`tests/test_write_json_permissions.py`**:
+- 新增 4 个测试用例：
+  - `test_read_json_corrects_permissive_live_trading` — 读取时修正 644 → 600
+  - `test_read_json_corrects_permissive_llm_provider` — 读取时修正 755 → 600
+  - `test_read_json_does_not_touch_non_sensitive_files` — 非敏感文件不受影响
+  - `test_read_json_returns_default_when_file_missing` — 文件不存在时正常返回默认值
+
+### 验收条件检查
+
+| 条件 | 状态 |
+|------|------|
+| live_trading.json 和 llm_provider.json 文件权限为 600 | ✅ |
+| 文件创建时自动设置 600 权限 | ✅ |
+| 文件已存在但权限不正确时，在写入时修正权限 | ✅ |
+| 文件已存在但权限不正确时，在读取时修正权限 | ✅ (新增) |
+| 相关测试验证权限设置逻辑正确 | ✅ (10个测试全部通过) |
+
+## Learnings
+
+- **模式**: 项目使用 `SENSITIVE_CONFIG_FILES` 集合来标识需要特殊权限处理的配置文件，这是一种集中式配置模式
+- **经验**: Python 函数定义顺序很重要——在模块级别定义的函数引用模块级变量时，变量必须在函数定义之前声明
+- **经验**: `stat.S_IMODE()` 是提取文件权限位的标准方式，跨平台兼容性优于直接访问 `st_mode`

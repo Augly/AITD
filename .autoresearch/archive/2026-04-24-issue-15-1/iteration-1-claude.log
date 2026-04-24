@@ -1,0 +1,17 @@
+验证完成。方法现在只在 `base.py` 中定义一次，三个子类通过继承使用。
+
+## 实现总结
+
+**T-001 子任务已完成：**
+
+1. ✅ `backend/exchanges/base.py` — 新增 `_cache_policy_for_kline_interval` 方法（第 50-61 行）
+2. ✅ `backend/exchanges/binance.py` — 删除重复实现
+3. ✅ `backend/exchanges/bybit.py` — 删除重复实现
+4. ✅ `backend/exchanges/okx.py` — 删除重复实现
+5. ✅ 所有 106 个现有测试通过
+
+## Learnings
+
+- **模式**: 三个交易所网关的 `_cache_policy_for_kline_interval` 实现完全一致，是纯业务逻辑，与交易所无关，适合提取到基类。
+- **经验**: 修改基类时需注意 `CLAUDE.md` 中的提醒 — 修改 `ExchangeGateway` 方法签名时必须同步更新所有子类及测试中的 `DummyGateway`。本次新增的是普通方法而非抽象方法，无需修改子类。
+- **踩坑**: 无 — 方法提取简单直接，测试全部通过。
