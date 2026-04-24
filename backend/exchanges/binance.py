@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
 
@@ -455,7 +456,7 @@ class BinanceGateway(ExchangeGateway):
             symbol = self.normalize_symbol(row.get("symbol"))
             closed_at_ms = num(row.get("time"))
             closed_at = (
-                __import__("datetime").datetime.utcfromtimestamp(closed_at_ms / 1000).replace(microsecond=0).isoformat() + "Z"
+                datetime.fromtimestamp(closed_at_ms / 1000, tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
                 if closed_at_ms is not None
                 else now_iso()
             )

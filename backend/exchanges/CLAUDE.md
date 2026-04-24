@@ -19,3 +19,4 @@
 - `_GATEWAYS` 是全局单例字典，`_ensure_gateways()` 只在首次访问时初始化
 - 构造器参数使用 keyword-only（`*` 分隔）防止位置参数误用
 - OKX `fetch_klines()` 请求 `history-candles` 时，`bar` 表示时间周期（如 `1m`、`1H`），`limit` 表示返回条数；不要把两者语义写反
+- 交易所网关输出 UTC 时间戳时，统一使用 timezone-aware `datetime` API（如 `datetime.now(timezone.utc)`、`datetime.fromtimestamp(..., tz=timezone.utc)`），并在对外字符串中把 `+00:00` 规范化为 `Z`
