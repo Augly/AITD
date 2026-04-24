@@ -1,0 +1,76 @@
+## Issue #44 子任务拆分分析
+
+### 当前状态分析
+
+**问题文件**: `backend/server.py` (773行)
+
+**当前日志实现** (`server.py:223-235`):
+- `AppRuntime` 类使用 `deque(maxlen=400)` 存储日志条目
+- `record_log()` 方法手动格式化日志行并 `print()` 输出
+- 缺乏: 日志级别过滤、结构化输出、持久化、标准日志配置
+
+**调用点**: `record_log()` 在 20+ 处被调用，覆盖 INFO/ERROR/WARN 级别
+
+**API 接口**: `api_logs()` 返回 `deque` 中的日志条目给前端
+
+---
+
+### 子任务拆分
+
+此 Issue 涉及将自定义 `print()+deque` 日志系统替换为 Python 标准库 `logging` + JSON formatter。需要保持向后兼容（`api_logs()` 接口不变），同时引入级别过滤和结构化输出。
+
+拆分为 3 个子任务：
+
+```json
+{
+  "issueNumber": 44,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "创建结构化日志模块",
+      "description": "在 backend/ 下创建新的日志模块，封装 Python logging 标准库的配置。包含：1) 配置根 logger，支持 DEBUG/INFO/WARN/ERROR 级别过滤；2) 实现 JSONFormatter 类，输出结构化 JSON 日志；3) 提供 get_logger() 工厂函数；4) 确保日志同时输出到 stdout 和内存缓冲区（供 api_logs 使用）。不修改 server.py 现有代码，仅创建新模块和测试。",
+      "acceptanceCriteria": [
+        "新建 backend/logging_config.py 模块，包含 JSONFormatter 和日志配置函数",
+        "日志级别可通过环境变量或参数配置，默认 INFO",
+        "JSON 输出包含 timestamp、level、message 字段",
+        "内存 Handler 缓存最近 400 条日志，线程安全",
+        "新增测试文件 tests/test_logging_config.py，覆盖率 ≥ 80%"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "替换 AppRuntime 日志实现",
+      "description": "将 server.py 中 AppRuntime 的 record_log() 和 api_logs() 实现从 print()+deque 替换为使用 T-001 创建的结构化日志模块。包含：1) 导入并初始化日志模块；2) 重写 record_log() 使用标准 logging；3) 重写 api_logs() 从内存 Handler 读取；4) 保持所有现有调用点不变（record_log 的调用方式不变）；5) 移除 deque 导入和使用。",
+      "acceptanceCriteria": [
+        "server.py 不再使用 print() 输出日志",
+        "server.py 不再导入和使用 deque 做日志存储",
+        "record_log() 方法使用标准 logging 模块",
+        "api_logs() 返回的格式与之前一致（entries 列表包含 at/level/message/line）",
+        "所有 20+ 处 record_log 调用无需修改仍能正常工作",
+        "现有测试 test_server_auth.py 继续通过"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "添加日志级别过滤和持久化支持",
+      "description": "在 T-002 基础上增强日志功能：1) 支持按级别过滤日志输出（如只输出 WARN 及以上到控制台）；2) 添加可选的文件日志 Handler，支持日志持久化到文件；3) 配置文件路径和级别通过环境变量控制；4) 更新 api_logs 接口支持按级别查询；5) 确保文件日志按日期轮转或大小限制。",
+      "acceptanceCriteria": [
+        "环境变量 LOG_LEVEL 控制控制台输出级别，默认 INFO",
+        "环境变量 LOG_FILE 控制日志文件路径，未设置则不写文件",
+        "文件日志使用 RotatingFileHandler，单文件最大 10MB，保留 5 个备份",
+        "api_logs() 支持可选的 level 参数过滤返回结果",
+        "新增测试覆盖级别过滤和文件日志功能"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```
