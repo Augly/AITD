@@ -304,14 +304,14 @@ class OkxGateway(ExchangeGateway):
 
     def fetch_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
         normalized = self.normalize_symbol(symbol)
-        bar = self.interval_map.get(str(interval or "").lower())
-        if not bar:
+        resolved_interval = self.interval_map.get(str(interval or "").lower())
+        if not resolved_interval:
             raise ValueError(f"Unsupported OKX kline interval: {interval}")
         ttl_seconds, max_stale_seconds = self._cache_policy_for_kline_interval(interval)
         rows = self._public_get_data(
             "/api/v5/market/history-candles",
-            {"instId": normalized, "bar": bar, "limit": int(clamp(limit, 1, 300))},
-            namespace=f"market_history_candles_{normalized}_{bar}",
+            {"instId": normalized, "bar": resolved_interval, "limit": int(clamp(limit, 1, 300))},
+            namespace=f"market_history_candles_{normalized}_{resolved_interval}",
             ttl_seconds=ttl_seconds,
             max_stale_seconds=max_stale_seconds,
         )

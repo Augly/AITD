@@ -18,3 +18,4 @@
 - 修改 `ExchangeGateway` 抽象方法签名时，必须同步更新所有子类（BinanceGateway, OkxGateway, BybitGateway）以及测试中的 DummyGateway
 - `_GATEWAYS` 是全局单例字典，`_ensure_gateways()` 只在首次访问时初始化
 - 构造器参数使用 keyword-only（`*` 分隔）防止位置参数误用
+- OKX `fetch_klines()` 请求 `history-candles` 时，`bar` 表示时间周期（如 `1m`、`1H`），`limit` 表示返回条数；不要把两者语义写反
