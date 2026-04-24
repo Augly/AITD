@@ -16,6 +16,12 @@
 - `server.py` 通过 `from .engine_core import ...` 使用引擎功能
 - 外部调用者统一通过 `backend.engine_core` 导入
 
+### HTTP 客户端约定
+
+- `backend/http_client.py` 中的 `httpx.Client` 连接池必须按“有效代理配置”缓存，而不是单一全局 client；至少要区分直连和各个代理 URL，否则 `network_settings` / `noProxy` 会被第一次请求锁死
+- 需要验证连接池时，不要依赖 `httpx.Client` 暴露 `limits` 属性；测试应改为断言创建参数或缓存行为
+- 模块级连接池要提供显式清理入口，并在进程退出时注册关闭逻辑，避免测试间状态污染
+
 ### 注意事项
 
 - `backend/engine/` 是 Python 包（含 `__init__.py`），`backend/engine_core.py` 是普通模块

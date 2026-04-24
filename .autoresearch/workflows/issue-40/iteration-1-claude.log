@@ -1,0 +1,41 @@
+子任务 T-001 已完成。以下是实现总结：
+
+## 变更内容
+
+### 1. `requirements.txt`
+- 添加 `httpx>=0.27.0` 依赖
+
+### 2. `backend/http_client.py` (重写)
+- **移除** `urllib.request` 相关导入（`Request`, `build_opener`, `ProxyHandler`, `HTTPError`, `URLError`）
+- **新增** 模块级 `_http_client` 单例变量，延迟初始化
+- **新增** `_get_http_client()` 函数：创建带连接池的 `httpx.Client`
+  - 连接池限制：`max_connections=100`, `max_keepalive_connections=20`
+  - 超时：45 秒
+  - 代理配置从 `network_settings` 读取
+- **新增** `_resolve_proxy_url()` 辅助函数
+- **保留** `_should_bypass_proxy()` 函数（noProxy 支持不变）
+- **重写** `request_text()`：使用 `httpx.Client.request()` 代替 `urllib`，保持完全相同的函数签名
+- `request_json()` 和 `cached_get_json()` 无需修改（它们调用 `request_text()`）
+
+## 验收条件检查
+
+| 条件 | 状态 |
+|------|------|
+| `httpx` 添加到 requirements.txt | ✅ |
+| 模块级 `httpx.Client` 单例 + 连接池 | ✅ |
+| 代理配置从 `network_settings` 传递 | ✅ |
+| 现有导入和模块结构保留（无破坏性变更） | ✅ |
+| 代码通过类型检查 | ✅ |
+
+## 验证结果
+
+- **44 个现有测试全部通过**（无回归）
+- **HTTP 请求集成测试通过**（连接复用验证）
+- **类型检查**：无新增错误（`utils.py:106` 的 pre-existing 错误与本改动无关）
+- **向后兼容**：所有公共 API 签名完全一致
+
+## Learnings
+
+- **模式**: 使用模块级单例 + 延迟初始化是 Python 中实现连接池的最佳实践，避免 import-time side effects
+- **踩坑**: `httpx.Client` 没有 `limits` 属性（limits 配置在初始化时传入 `_transport`），测试时不能通过 client 实例直接读取
+- **经验**: 错误处理中 `getattr(error, "response", None) and getattr(error.response, ...)` 的链式写法会导致 mypy 报错，应拆分为两步：先获取 response 对象，再判断非 None 后获取属性

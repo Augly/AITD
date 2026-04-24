@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import atexit
 import json
+import time
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import ProxyHandler, Request, build_opener
 
 from .utils import DATA_DIR, now_iso, read_json, sha1_hex, write_json
-
 
 CACHE_DIR = DATA_DIR / "cache" / "http"
 
@@ -17,12 +16,69 @@ class HttpRequestError(RuntimeError):
     pass
 
 
+# Module-level pooled httpx clients for connection reuse.
+# Initialized lazily on first request to avoid import-time side effects.
+_http_clients: dict[str | None, Any] = {}
+
+
+def _load_httpx() -> Any:
+    try:
+        import httpx
+    except ImportError:
+        raise HttpRequestError(
+            "httpx is required for HTTP requests. Install it with: pip install httpx>=0.27.0"
+        ) from None
+    return httpx
+
+
+def _build_http_client(proxy_url: str | None) -> Any:
+    httpx = _load_httpx()
+
+    limits = httpx.Limits(max_connections=100, max_keepalive_connections=20)
+    client_kwargs: dict[str, Any] = {"limits": limits, "timeout": httpx.Timeout(45.0)}
+    if proxy_url:
+        client_kwargs["proxy"] = proxy_url
+    return httpx.Client(**client_kwargs)
+
+
+def _get_http_client(network_settings: dict[str, Any] | None = None) -> Any:
+    proxy_url = _resolve_proxy_url(network_settings or {})
+    client = _http_clients.get(proxy_url)
+    if client is not None:
+        return client
+
+    client = _build_http_client(proxy_url)
+    _http_clients[proxy_url] = client
+    return client
+
+
+def _close_http_clients() -> None:
+    for client in list(_http_clients.values()):
+        try:
+            client.close()
+        except Exception:
+            pass
+    _http_clients.clear()
+
+
+def _resolve_proxy_url(network_settings: dict[str, Any]) -> str | None:
+    if not network_settings.get("proxyEnabled") or not network_settings.get("proxyUrl"):
+        return None
+    return str(network_settings.get("proxyUrl") or "").strip() or None
+
+
+def _should_bypass_proxy(hostname: str, network_settings: dict[str, Any]) -> bool:
+    no_proxy = [item.lower() for item in network_settings.get("noProxy", [])]
+    host = (hostname or "").lower()
+    return any(host == item or host.endswith(f".{item}") for item in no_proxy)
+
+
 def _cache_path(namespace: str, url: str) -> Path:
     return CACHE_DIR / namespace / f"{sha1_hex(url)}.json"
 
 
 def _cache_payload(path: Path, payload: Any, ttl_seconds: int, max_stale_seconds: int) -> None:
-    now_ms = int(__import__("time").time() * 1000)
+    now_ms = int(time.time() * 1000)
     write_json(
         path,
         {
@@ -38,36 +94,13 @@ def _cache_payload(path: Path, payload: Any, ttl_seconds: int, max_stale_seconds
 def _cache_is_fresh(cache: dict[str, Any] | None) -> bool:
     if not cache:
         return False
-    return int(cache.get("expiresAtMs") or 0) > int(__import__("time").time() * 1000)
+    return int(cache.get("expiresAtMs") or 0) > int(time.time() * 1000)
 
 
 def _cache_is_usable(cache: dict[str, Any] | None) -> bool:
     if not cache:
         return False
-    return int(cache.get("staleUntilMs") or 0) > int(__import__("time").time() * 1000)
-
-
-def _should_bypass_proxy(hostname: str, network_settings: dict[str, Any]) -> bool:
-    no_proxy = [item.lower() for item in network_settings.get("noProxy", [])]
-    host = (hostname or "").lower()
-    return any(host == item or host.endswith(f".{item}") for item in no_proxy)
-
-
-def _build_opener(url: str, network_settings: dict[str, Any] | None):
-    if not network_settings:
-        return build_opener()
-    parsed = urlparse(url)
-    if not network_settings.get("proxyEnabled") or not network_settings.get("proxyUrl") or _should_bypass_proxy(parsed.hostname or "", network_settings):
-        return build_opener()
-    proxy_url = str(network_settings.get("proxyUrl") or "").strip()
-    scheme = parsed.scheme.lower()
-    proxies = {
-        "http": proxy_url,
-        "https": proxy_url,
-    }
-    if scheme in {"http", "https"}:
-        return build_opener(ProxyHandler(proxies))
-    return build_opener()
+    return int(cache.get("staleUntilMs") or 0) > int(time.time() * 1000)
 
 
 def request_text(
@@ -79,16 +112,23 @@ def request_text(
     timeout_seconds: int = 45,
     network_settings: dict[str, Any] | None = None,
 ) -> str:
-    body: bytes | None
+    ns = network_settings or {}
+    parsed = urlparse(url)
+    if _should_bypass_proxy(parsed.hostname or "", ns):
+        ns = {**ns, "proxyEnabled": False}
+
+    client = _get_http_client(ns)
+
+    body: bytes | str | None
     if payload is None:
         body = None
     elif isinstance(payload, (bytes, bytearray)):
         body = bytes(payload)
     elif isinstance(payload, str):
-        body = payload.encode("utf-8")
+        body = payload
     else:
-        body = json.dumps(payload).encode("utf-8")
-    request = Request(url=url, method=method.upper(), data=body)
+        body = json.dumps(payload)
+
     merged_headers = {
         "accept": "application/json",
         "user-agent": "python-trading-agent/1.0",
@@ -96,17 +136,24 @@ def request_text(
     if body is not None and "content-type" not in {key.lower() for key in (headers or {})}:
         merged_headers["content-type"] = "application/json"
     merged_headers.update(headers or {})
-    for key, value in merged_headers.items():
-        request.add_header(key, value)
-    opener = _build_opener(url, network_settings or {})
+
     try:
-        with opener.open(request, timeout=timeout_seconds) as response:
-            return response.read().decode("utf-8")
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        raise HttpRequestError(f"{error.code} {error.reason}: {detail}") from error
-    except URLError as error:
-        raise HttpRequestError(str(error.reason)) from error
+        response = client.request(
+            method.upper(),
+            url,
+            content=body,
+            headers=merged_headers,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.text
+    except Exception as error:
+        response_obj = getattr(error, "response", None)
+        status_code = getattr(response_obj, "status_code", None) if response_obj is not None else None
+        if status_code is not None:
+            detail = getattr(response_obj, "text", "") or ""
+            raise HttpRequestError(f"{status_code} {error}: {detail}") from error
+        raise HttpRequestError(str(error)) from error
 
 
 def request_json(
@@ -166,3 +213,6 @@ def cached_get_json(
         if _cache_is_usable(cache):
             return cache.get("payload")
         raise
+
+
+atexit.register(_close_http_clients)

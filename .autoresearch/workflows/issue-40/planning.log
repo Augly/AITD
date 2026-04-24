@@ -1,0 +1,84 @@
+Now I have a comprehensive understanding of the codebase. Let me analyze the issue and create the subtask plan.
+
+## Analysis Summary
+
+**Issue #40**: `http_client.py` uses `urllib.request` which creates a new TCP connection per request. The suggested fix is migrating to `httpx.Client` or `requests.Session` for connection reuse.
+
+**Current State**:
+- `backend/http_client.py` has three public functions: `request_text`, `request_json`, `cached_get_json`
+- Used by: `exchanges/binance.py`, `exchanges/bybit.py`, `exchanges/okx.py`, `server.py`, `llm.py`
+- No existing tests for `http_client.py`
+- `requirements.txt` only has `filelock>=3.0.0` — no `httpx` or `requests` dependency
+- The module has proxy support via `_build_opener` and caching via `cached_get_json`
+
+**Key Challenge**: The project uses standard library only (`urllib.request`). Adding `httpx` or `requests` would introduce an external dependency. However, the issue explicitly suggests this migration for performance gains. Since the program rules say "Agent cannot modify dependency management files unless Issue explicitly requires", and this Issue explicitly requires migration to `httpx.Client` or `requests.Session`, adding the dependency is within scope.
+
+**Migration Strategy**:
+1. `httpx` is preferred over `requests` because: it's modern, has native async support (future-proof), better type hints, and is the suggested first option in the issue
+2. Need to preserve: proxy support, error handling (`HttpRequestError`), caching behavior, and all function signatures
+3. Need to add connection pooling via a module-level `httpx.Client` instance
+
+**Subtask Splitting**:
+- T-001: Add `httpx` dependency and create module-level client with connection pooling, preserving proxy support
+- T-002: Migrate `request_text` and `request_json` to use `httpx.Client`, preserving error handling semantics
+- T-003: Write unit tests for `http_client.py` covering connection reuse, proxy, errors, and caching
+
+```json
+{
+  "issueNumber": 40,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "Add httpx dependency and create persistent HTTP client",
+      "description": "Add `httpx>=0.27.0` to requirements.txt and create a module-level `httpx.Client` instance in `backend/http_client.py` with connection pooling. Preserve existing proxy support by configuring the client with proxy settings from network_settings. The client should be lazily initialized or module-level singleton to enable connection reuse across all requests. Ensure the client is properly closed on process exit if possible, or document that connection cleanup is handled by OS process termination.",
+      "acceptanceCriteria": [
+        "`httpx` added to requirements.txt with appropriate version constraint",
+        "Module-level `httpx.Client` instance exists with connection pooling (limits configured)",
+        "Proxy configuration from `network_settings` is passed to the client",
+        "Existing imports and module structure are preserved (no breaking changes to other modules)",
+        "Code passes lint/typecheck"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "Migrate request_text and request_json to httpx.Client",
+      "description": "Rewrite `request_text` and `request_json` functions to use the module-level `httpx.Client` instead of `urllib.request`. Preserve all existing behavior: HTTP method handling, header merging (including default accept and user-agent), body serialization (bytes/str/JSON), timeout handling, proxy support via `_build_opener` logic adapted for httpx, and error translation to `HttpRequestError` (HTTP status errors with body detail, URL errors). Remove `urllib.request` imports once no longer needed. Keep function signatures identical to avoid breaking callers.",
+      "acceptanceCriteria": [
+        "`request_text` uses `httpx.Client.request()` instead of `urllib.request`",
+        "`request_json` continues to delegate to `request_text` (or both use shared client)",
+        "All header merging behavior preserved (default accept, user-agent, content-type)",
+        "Body serialization for bytes/str/dict preserved",
+        "Timeout configuration preserved",
+        "HTTP errors translated to `HttpRequestError` with status code, reason, and body detail",
+        "URL errors translated to `HttpRequestError`",
+        "Function signatures remain unchanged",
+        "Code passes lint/typecheck"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-003",
+      "title": "Write unit tests for http_client module",
+      "description": "Create `tests/test_http_client.py` with comprehensive tests for the migrated `http_client.py`. Use `pytest` and `unittest.mock` (or `respx` for httpx if added) to mock HTTP responses. Cover: (1) request_text with various payloads, (2) request_json with valid/invalid JSON responses, (3) cached_get_json cache hit/miss/stale behavior, (4) HTTP error handling (4xx/5xx), (5) proxy configuration passthrough, (6) header merging. If using `respx`, add it to requirements.txt. Otherwise use `unittest.mock.patch` to mock the httpx client.",
+      "acceptanceCriteria": [
+        "Test file `tests/test_http_client.py` exists and passes with `pytest`",
+        "Tests cover request_text with GET/POST and various payload types",
+        "Tests cover request_json success and JSON decode error paths",
+        "Tests cover cached_get_json fresh cache hit, miss, and stale fallback",
+        "Tests cover HTTP error translation to HttpRequestError",
+        "Tests cover proxy configuration",
+        "Tests cover header merging behavior",
+        "All tests pass"
+      ],
+      "priority": 3,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}
+```

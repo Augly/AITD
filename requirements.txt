@@ -3,3 +3,4 @@
 #   pip install -r requirements.txt
 
 filelock>=3.0.0
+httpx>=0.27.0
