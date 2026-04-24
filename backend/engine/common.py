@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .state import normalize_position, normalize_trade, now_iso
@@ -40,7 +41,7 @@ def close_position(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     trade = normalize_trade(
         {
-            "id": f"{position['id']}-close-{int(__import__('time').time() * 1000)}",
+            "id": f"{position['id']}-close-{int(time.time() * 1000)}",
             "positionId": position["id"],
             "symbol": position["symbol"],
             "baseAsset": position["baseAsset"],
@@ -89,7 +90,7 @@ def reduce_position(
     partial_position["quantity"] = close_qty
     trade = normalize_trade(
         {
-            "id": f"{position['id']}-reduce-{int(__import__('time').time() * 1000)}",
+            "id": f"{position['id']}-reduce-{int(time.time() * 1000)}",
             "positionId": position["id"],
             "symbol": position["symbol"],
             "baseAsset": position["baseAsset"],

@@ -1,0 +1,88 @@
+[0m
+> build · ark-code-latest
+[0m
+[0m✱ [0mGlob "**/*.py"[90m in . · 47 matches[0m
+我来审核 Issue #41 的实现。首先让我搜索相关代码文件。
+[0m✱ [0mGrep "_exchange_info|normalize"[90m in . · 301 matches[0m
+[0m→ [0mRead backend/exchanges/binance.py[90m [offset=45, limit=150][0m
+让我查看 binance.py 的关键实现和测试文件：
+[0m→ [0mRead tests/test_binance_exchange_info_cache.py
+让我继续查看 binance.py 中 `_exchange_info` 和 `_symbol_info` 的核心实现：
+[0m→ [0mRead backend/exchanges/binance.py[90m [limit=100, offset=290][0m
+现在让我运行测试来验证实现：
+[0m
+[0m$ [0mcd /Users/mac/Desktop/clawCoder/AITD && python -m pytest tests/test_binance_exchange_info_cache.py -v
+zsh:1: command not found: python
+[0m
+[0m$ [0mcd /Users/mac/Desktop/clawCoder/AITD && python3 -m pytest tests/test_binance_exchange_info_cache.py -v
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0 -- /Library/Developer/CommandLineTools/usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/mac/Desktop/clawCoder/AITD
+plugins: anyio-4.12.1, cov-7.1.0
+collecting ... collected 13 items
+
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_uses_memory_cache_on_second_call PASSED [  7%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_refreshes_after_ttl_expires PASSED [ 15%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_thread_safe_concurrent_access PASSED [ 23%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_empty_payload_returns_empty_dict PASSED [ 30%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_uses_cached_exchange_info PASSED [ 38%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_cache_is_scoped_by_base_url PASSED [ 46%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_index_is_scoped_by_base_url PASSED [ 53%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_cache_ttl_matches_file_cache_policy PASSED [ 61%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_uses_o1_index_lookup PASSED [ 69%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_index_is_built_on_cache_refresh PASSED [ 76%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_refreshes_same_symbol_after_ttl_expires PASSED [ 84%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_info_raises_for_unknown_symbol PASSED [ 92%]
+tests/test_binance_exchange_info_cache.py::TestExchangeInfoCache::test_symbol_index_skips_invalid_entries PASSED [100%]
+
+============================== 13 passed in 0.03s ==============================
+[0m
+让我检查是否有 lint 问题：
+[0m$ [0mcd /Users/mac/Desktop/clawCoder/AITD && python3 -m flake8 backend/exchanges/binance.py --count --select=E9,F63,F7,F82 --show-source --statistics 2>/dev/null || echo "flake8 not installed"
+flake8 not installed
+[0m
+现在让我查看 progress.md 了解迭代历史：
+[0m✗ [0mread failed
+[91m[1mError: [0mFile not found: /Users/mac/Desktop/clawCoder/AITD/progress.md
+## 审核报告
+
+### Issue
+- 编号: #41
+- 迭代次数: 2
+
+### 总体评价
+**评分: 93/100**
+
+### 严重问题 (必须修复)
+无
+
+### 一般问题 (建议修复)
+1. **`_symbol_info` 的竞态条件风险** (第335行)
+   - 问题：在缓存失效时，先释放锁再调用 `_exchange_info()`，然后又重新获取锁。虽然 `_exchange_info()` 内部有锁，但这种模式可能导致高并发下多个线程同时触发刷新。
+   - 建议：将整个 `_symbol_info` 逻辑放在同一把锁内，或在调用 `_exchange_info()` 后重新检查缓存状态。
+
+2. **缺少 `normalize_quantity` / `normalize_price` 的缓存行为测试**
+   - 问题：这两个方法是 `_symbol_info` 的主要调用者，但没有专门测试验证它们确实使用了缓存索引。
+   - 建议：添加测试用例，验证连续调用这些函数不会触发重复的 `_exchange_info` 调用。
+
+### 建议改进 (可选)
+1. 可以考虑将 `_symbol_info` 中的锁逻辑简化，减少锁的获取/释放次数。
+
+### 审核结论
+- ✅ 通过 (达标)
+
+### 自检验证
+- ✅ 13个测试全部通过
+- ✅ 代码遵循项目既有模式 (threading.Lock, URL 分桶, TTL 机制)
+- ✅ O(1) 索引查找解决了核心性能问题
+
+---
+
+## Learnings
+
+- **模式**: 代码库使用实例级 `threading.Lock()` 保护缓存，同时按完整 URL (含 `baseUrl`) 分桶避免 testnet/prod 串缓存
+- **模式**: `_symbol_index` 与 `_exchange_info_cache` 共享相同的 URL 分桶维度，确保索引查找的一致性
+- **模式**: 索引构建时必须过滤无效条目 (非 dict、缺少 symbol) 以避免运行时 KeyError
+- **经验**: 缓存 TTL 必须在内存缓存和文件缓存层保持一致，使用同一组常量驱动
+- **经验**: 并发测试优先使用 `threading.Barrier` / `threading.Event` 而非 `time.sleep`，确保测试稳定性

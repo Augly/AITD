@@ -1,0 +1,35 @@
+{
+  "issueNumber": 41,
+  "subtasks": [
+    {
+      "id": "T-001",
+      "title": "为 _exchange_info 添加实例级内存缓存",
+      "description": "BinanceGateway 的 _exchange_info 方法每次调用都通过 cached_get_json 进行文件 I/O 和 JSON 解析。需要在实例级别增加内存缓存，在缓存有效期内直接返回内存中的数据，避免重复的磁盘读取和反序列化开销。缓存 TTL 应与现有的文件缓存策略保持一致（6小时）。",
+      "acceptanceCriteria": [
+        "_exchange_info 在缓存有效期内不重复调用 cached_get_json",
+        "缓存失效后自动重新获取数据",
+        "缓存 TTL 为 6 小时，与现有文件缓存策略一致",
+        "多线程/并发场景下缓存访问安全",
+        "现有测试全部通过"
+      ],
+      "priority": 1,
+      "type": "code",
+      "passes": false
+    },
+    {
+      "id": "T-002",
+      "title": "为 _symbol_info 添加 symbol 字典索引缓存",
+      "description": "_symbol_info 当前对 exchange_info 的 symbols 列表做 O(N) 线性查找。应在 _exchange_info 数据更新时构建 symbol → info 的字典映射，使 _symbol_info 的查找变为 O(1)。索引缓存应与 _exchange_info 的内存缓存同步更新。",
+      "acceptanceCriteria": [
+        "_symbol_info 查找时间从 O(N) 优化为 O(1)",
+        "symbol 索引与 _exchange_info 缓存同步更新",
+        "索引构建失败时优雅回退到线性查找",
+        "新增测试验证缓存命中和索引查找正确性",
+        "现有测试全部通过"
+      ],
+      "priority": 2,
+      "type": "code",
+      "passes": false
+    }
+  ]
+}

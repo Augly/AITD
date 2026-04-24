@@ -1,0 +1,10 @@
+[2026-04-24 23:06:22] 工作目录: /Users/mac/Desktop/clawCoder/AITD/.autoresearch/workflows/issue-39
+[2026-04-24 23:06:22] 初始化经验日志: /Users/mac/Desktop/clawCoder/AITD/.autoresearch/workflows/issue-39/progress.md
+[2026-04-24 23:06:22] 创建分支: feature/issue-39
+[2026-04-24 23:06:22] 分支已存在，切换到: feature/issue-39
+[2026-04-24 23:06:23] 
+[2026-04-24 23:06:23] ⚠️ 脚本被 EXIT 信号中断
+[2026-04-24 23:06:23] 📋 退出码: 0 (正常退出（但 SCRIPT_COMPLETED_NORMALLY 未设置）)
+[2026-04-24 23:06:23] 🔧 最后执行命令: create_branch "$ISSUE_NUMBER"
+[2026-04-24 23:06:23] 📝 中断信息已记录到 /Users/mac/Desktop/clawCoder/AITD/.autoresearch/workflows/issue-39/log.md
+[2026-04-24 23:06:23] 💡 使用 ./run.sh -c 39 可继续运行

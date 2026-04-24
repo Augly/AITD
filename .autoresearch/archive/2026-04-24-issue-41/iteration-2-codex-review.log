@@ -1,0 +1,2019 @@
+Reading additional input from stdin...
+OpenAI Codex v0.124.0 (research preview)
+--------
+workdir: /Users/mac/Desktop/clawCoder/AITD
+model: gpt-5.4
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /Users/mac/.codex/memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019dbff4-0c61-7863-bb03-ed4f96b34a25
+--------
+user
+审核 Issue #41 的实现
+
+项目路径: /Users/mac/Desktop/clawCoder/AITD
+项目语言: python
+Issue 标题: P1: _exchange_info full load on every normalize call
+
+
+## 子任务审核
+
+子任务进度: 0/2 已完成 | 当前子任务: T-001 - 为 _exchange_info 添加实例级内存缓存
+
+请审核当前子任务的实现：
+
+- **ID**: T-001
+- **标题**: 为 _exchange_info 添加实例级内存缓存
+- **类型**: code
+- **描述**: BinanceGateway 的 _exchange_info 方法每次调用都通过 cached_get_json 进行文件 I/O 和 JSON 解析。需要在实例级别增加内存缓存，在缓存有效期内直接返回内存中的数据，避免重复的磁盘读取和反序列化开销。缓存 TTL 应与现有的文件缓存策略保持一致（6小时）。
+- **验收条件**:
+  - _exchange_info 在缓存有效期内不重复调用 cached_get_json
+  - 缓存失效后自动重新获取数据
+  - 缓存 TTL 为 6 小时，与现有文件缓存策略一致
+  - 多线程/并发场景下缓存访问安全
+  - 现有测试全部通过
+
+
+请针对此子任务的验收条件进行审核。
+---
+请按照以下指令执行审核。
+
+评分格式要求: 必须在审核报告的总体评价中使用 **评分: X/100** 格式输出分数，其中 X 为 0-100 的整数。
+
+评分维度与权重:
+- 正确性 (35%): 功能是否符合需求、边界情况处理、错误处理
+- 测试质量 (25%): 核心逻辑覆盖、边界测试、错误路径测试
+- 代码质量 (20%): 命名清晰、结构清晰、遵循项目规范
+- 安全性 (10%): 输入验证、无注入风险、无敏感信息泄露
+- 性能 (10%): 无明显性能问题、无不必要的内存分配
+
+评分标准: 90-100 优秀 | 85-89 良好(达标) | 70-84 及格偏上 | 50-69 及格 | 30-49 较差 | 0-29 不合格
+注意: 评分 ≥ 85 才算达标。
+
+## 跨迭代经验
+
+以下是之前迭代中积累的经验和发现，请优先参考，避免重复踩坑：
+
+# Issue #41 经验日志
+
+## Codebase Patterns
+
+> 此区域汇总最重要的可复用经验和模式。Agent 可在实现过程中更新此区域。
+
+- **实例级内存缓存模式**: BinanceGateway 使用 `self._exchange_info_cache` + `self._exchange_info_expires_at_ms` + `self._exchange_info_lock` 三重属性实现线程安全的内存缓存。锁内完成"检查-获取-写入"全部操作，确保并发场景下只有一个请求穿透到 `cached_get_json`。
+- **缓存 TTL 一致性**: 内存缓存 TTL 与底层文件缓存 TTL 保持一致（6小时），避免两层缓存策略不一致导致的数据过期问题。
+- **Python 并发安全**: 使用 `threading.Lock()` 而非 `threading.RLock()`，因为 `_exchange_info` 内部不会递归调用自身，简单锁更高效。
+- **Mock 测试策略**: 测试中对 `backend.exchanges.binance.cached_get_json` 进行 monkeypatch，而非 patch `http_client` 底层函数，这样测试更聚焦在网关层的行为。
+
+## 实现总结
+
+### 修改文件
+- `backend/exchanges/binance.py`: 为 `_exchange_info` 添加实例级内存缓存
+- `tests/test_binance_exchange_info_cache.py`: 新增 5 个测试用例
+
+### 关键改动
+1. `__init__` 中添加三个属性: `_exchange_info_cache`, `_exchange_info_expires_at_ms`, `_exchange_info_lock`
+2. `_exchange_info` 方法在锁内检查内存缓存，命中直接返回；未命中则调用 `cached_get_json`，结果写入内存缓存后再返回
+3. 缓存 TTL 为 6 小时（与文件缓存一致）
+
+### 测试结果
+- 新增 5 个测试全部通过
+- 现有 217 个测试通过（8 个已有失败与本次改动无关）
+
+## Iteration 1 - 2026-04-24
+
+- **Agent**: claude
+- **类型**: 初始实现 - 为 _exchange_info 添加实例级内存缓存
+- **评分**: N/A/100
+
+- **经验与发现**:
+
+## Learnings
+
+- **模式**: 两层缓存（内存 + 文件）时，TTL 保持一致避免策略冲突
+- **踩坑**: 初始实现将获取逻辑放在锁外，导致并发测试失败（10 线程全部穿透）。修复为锁内完成全部操作后通过。
+- **经验**: Python 实例级内存缓存使用 `threading.Lock()` 足够，无需 `RLock`；测试 monkeypatch 应针对模块级函数而非深层依赖
+# Codex Agent
+
+你是一个专业的软件工程师 Agent，既能实现功能，也能审核代码。
+
+---
+
+## 角色定位
+
+**你可以是实现者，也可以是审核者，取决于任务要求。**
+
+- 作为实现者：根据 Issue 描述或审核反馈实现/改进代码
+- 作为审核者：审查代码质量，给出评分和改进建议
+- 你需要编写代码和测试
+- 你需要接受审核反馈并改进
+
+---
+
+## 工作流程
+
+### Phase 1: 理解需求
+
+```
+1. 阅读 Issue #N 的完整内容
+2. 理解 Issue 的核心诉求
+3. 如果有疑问，列出需要澄清的问题
+4. 确认涉及的代码模块
+```
+
+### Phase 2: 分析代码
+
+```
+1. 使用 Glob 和 Grep 工具搜索相关代码
+2. 阅读相关文件，理解现有架构
+3. 识别需要修改的文件
+4. 评估改动范围和影响
+```
+
+### Phase 3: 实现代码
+
+```
+1. 编写功能实现代码
+2. 编写单元测试代码（如适用）
+3. 确保测试覆盖核心逻辑（如适用）
+4. 运行测试验证实现（如适用）
+```
+
+> **测试豁免**：如果项目类型或实现内容不适用单元测试（如 Shell 脚本、配置文件、Dockerfile、CI/CD pipeline 等），可以跳过步骤 2-4，在报告中注明"单元测试不适用"及原因。
+
+### Phase 4: 质量自检
+
+```
+实现完成后，必须执行以下自检：
+
+### 编译/类型检查
+- [ ] 代码可以编译通过（如适用）
+- [ ] 类型检查无错误（如适用）
+
+### 代码质量
+- [ ] Lint 无新增错误
+- [ ] 代码风格符合项目规范
+- [ ] 无硬编码配置
+
+### 测试验证
+- [ ] 相关测试通过
+- [ ] 新代码有对应的测试覆盖
+- [ ] 测试覆盖率 ≥ 70%（如适用）
+
+### 其他检查
+- [ ] 错误处理完整
+- [ ] 无安全漏洞
+
+> ⚠️ **重要**: 自检不通过必须修复，不得进入提交阶段
+```
+
+---
+
+## 输出格式
+
+每次实现完成后，你必须输出以下结构：
+
+```markdown
+## 实现报告
+
+### Issue
+- 编号: #N
+- 标题: [Issue 标题]
+- 类型: feature / bugfix / refactor / docs
+
+### 改动概述
+- 修改文件: [文件列表]
+- 新增文件: [文件列表]
+- 删除文件: [文件列表]
+- 代码行数: +X / -Y
+
+### 实现思路
+[描述你的实现思路，关键设计决策]
+
+### 测试情况
+- 测试文件: [测试文件路径]
+- 测试用例数: N
+- 覆盖场景:
+  - [场景1]
+  - [场景2]
+  - ...
+
+### 待确认问题
+- [列出需要审核者关注的问题，如果没有则写"无"]
+```
+
+---
+
+## 代码规范
+
+### Go 代码规范
+
+```go
+// 1. 包注释
+// Package parser 提供事件流解析功能。
+package parser
+
+// 2. 函数注释
+// Parse 解析输入数据并返回事件列表。
+// 如果输入格式无效，返回 ErrInvalidInput 错误。
+func Parse(input []byte) ([]Event, error) { ... }
+
+// 3. 错误处理
+if err != nil {
+    return fmt.Errorf("parse failed: %w", err)
+}
+
+// 4. 表格驱动测试
+func TestParse(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   string
+        want    []Event
+        wantErr bool
+    }{
+        {"valid input", `{"type":"start"}`, []Event{{Type: "start"}}, false},
+        {"invalid json", `{invalid}`, nil, true},
+        {"empty input", ``, nil, true},
+    }
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            got, err := Parse([]byte(tt.input))
+            if (err != nil) != tt.wantErr {
+                t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+            }
+            if !reflect.DeepEqual(got, tt.want) {
+                t.Errorf("Parse() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```
+
+### 禁止事项
+
+```
+❌ 不要使用 panic（除非在不可恢复的错误场景）
+❌ 不要忽略错误返回值
+❌ 不要使用全局变量
+❌ 不要在测试中使用 time.Sleep
+❌ 不要硬编码配置值
+❌ 不要提交注释掉的代码
+❌ 不要使用魔法数字
+```
+
+---
+
+## 面对审核反馈
+
+当审核者 (Claude) 提出批评意见时：
+
+### 审核者自检验证
+
+作为审核者时，审核前确认实现者已完成以下自检：
+
+```markdown
+### 实现者自检确认
+- [ ] 实现者已执行编译/类型检查
+- [ ] 实现者已执行 Lint 检查
+- [ ] 实现者已运行相关测试
+- [ ] 实现者已确认测试覆盖
+
+> 如自检未执行或存在未修复问题，应要求实现者先完成自检。
+```
+
+### 1. 理解反馈
+
+```markdown
+## 反馈理解
+
+审核者提出以下问题：
+1. [问题1] - 我的理解：[描述理解]
+2. [问题2] - 我的理解：[描述理解]
+
+我是否正确理解了反馈？
+```
+
+### 2. 分类处理
+
+```
+| 反馈类型 | 处理方式 |
+|---------|---------|
+| 严重 Bug | 立即修复 |
+| 设计问题 | 评估影响后修复 |
+| 代码风格 | 按规范修改 |
+| 性能问题 | 评估必要性后处理 |
+| 建议性意见 | 根据实际情况决定是否采纳 |
+```
+
+### 3. 改进报告
+
+```markdown
+## 改进报告
+
+### 已修复问题
+- [问题1]: [修复方案]
+- [问题2]: [修复方案]
+
+### 未采纳建议
+- [建议]: [原因]
+
+### 新增改动
+- [描述新增的改动]
+
+### 自检执行
+- [ ] 代码编译通过
+- [ ] Lint 无新增错误
+- [ ] 测试全部通过
+- [ ] 测试覆盖率达标
+```
+
+---
+
+## 特殊情况处理
+
+### 无法实现
+
+如果 Issue 描述不清或技术上不可行：
+
+```markdown
+## 无法实现报告
+
+### Issue
+- 编号: #N
+
+### 阻塞原因
+- [ ] 需求不明确
+- [ ] 缺少必要上下文
+- [ ] 技术限制
+- [ ] 依赖未解决
+
+### 详细说明
+[描述具体原因]
+
+### 建议操作
+- [建议人类如何处理这个 Issue]
+```
+
+### 需要设计决策
+
+如果 Issue 涉及架构级别的决策：
+
+```markdown
+## 需要设计评审
+
+### Issue
+- 编号: #N
+
+### 设计问题
+[描述需要决策的问题]
+
+### 可选方案
+1. 方案A: [描述] - 优点: [] 缺点: []
+2. 方案B: [描述] - 优点: [] 缺点: []
+
+### 建议
+[你的建议和理由]
+
+### 请人工确认后继续
+```
+
+---
+
+## 跨迭代经验
+
+每次实现或修复完成后，你必须在输出末尾添加 `## Learnings` 部分，总结：
+
+1. **发现的关键模式**：代码库中的重要模式和约定
+2. **踩过的坑**：遇到的问题和解决方案
+3. **可复用的经验**：其他迭代可能受益的经验
+
+格式示例：
+```markdown
+## Learnings
+
+- **模式**: [发现的可复用模式]
+- **踩坑**: [遇到的问题及解决方式]
+- **经验**: [对后续迭代有帮助的经验]
+```
+
+如果你在项目中发现了重要的可复用模式，可以建议更新 `progress.md` 的 `## Codebase Patterns` 区域。
+
+### 更新目录级 CLAUDE.md
+
+除了在输出中总结 Learnings，你还必须将可复用的项目知识写入相关目录的 `CLAUDE.md` 文件中。这样后续迭代和 Agent 都能自动获取这些知识。
+
+**操作流程**：
+1. 实现完成后，回顾你修改或新增代码所在的目录
+2. 如果发现了可复用的模式、约定或陷阱，更新（或创建）该目录的 `CLAUDE.md`
+3. 如果 `CLAUDE.md` 已存在，追加新知识，不要删除已有内容
+4. 如果 `CLAUDE.md` 不存在，创建新文件，格式参考 `program.md` 中的「目录级知识积累」章节
+
+**示例**：如果你在 `internal/auth/` 目录下发现 "所有中间件必须调用 next() 即使认证失败"，就更新 `internal/auth/CLAUDE.md`：
+
+```markdown
+# internal/auth
+
+## 架构约定
+- 所有中间件必须调用 next() 即使认证失败，确保日志中间件能记录请求
+```
+
+---
+
+## 迭代限制
+
+- 最大迭代次数: 5 次
+- 如果连续 3 次测试失败，报告阻塞
+- 如果审核者满意度不再提升，可以停止迭代并说明原因
+
+---
+
+## UI 验证指引
+
+当审核 UI 类型（type: "ui"）子任务时，请额外关注：
+- 页面布局和样式是否正确渲染
+- 交互元素（按钮、表单、链接）是否功能正常
+- 无 console 错误或白屏
+- 子任务通过代码审核后，将自动进行浏览器截图验证
+
+作为实现者时，处理 UI 类型子任务需注意：
+- 确保页面可在浏览器中正常加载
+- 注意 CSS 和 JavaScript 的正确引用
+- 实现完成后将进行浏览器截图验证
+
+---
+
+## 示例对话
+
+### 示例 1: 功能实现
+
+**Human**: 实现 Issue #42 - 添加用户认证功能
+
+**Codex**:
+```
+我来分析 Issue #42 并实现用户认证功能。
+
+首先，让我了解现有代码结构...
+[使用 Glob/Grep 搜索相关代码]
+
+分析完成，我计划：
+1. 在 internal/auth/ 目录下创建认证模块
+2. 实现 JWT token 生成和验证
+3. 添加认证中间件
+4. 编写单元测试
+
+开始实现...
+[编写代码]
+
+运行测试...
+go test ./internal/auth/... -v
+
+## 实现报告
+[按格式输出报告]
+```
+
+### 示例 2: 处理审核反馈
+
+**Claude**: "代码中使用了硬编码的密钥，存在安全风险..."
+
+**Codex**:
+```
+## 反馈理解
+
+审核者指出：
+- 问题: 硬编码密钥存在安全风险
+
+我的理解: 应该从配置或环境变量读取密钥
+
+## 改进
+
+修改方案：
+1. 将密钥改为从环境变量读取
+2. 添加默认值用于开发环境
+3. 添加配置验证
+
+[修改代码]
+
+## 改进报告
+[按格式输出报告]
+```
+codex
+我先检查与 `Issue #41 / T-001` 相关的实现和测试，确认 `_exchange_info` 的缓存逻辑、并发保护以及测试覆盖是否满足验收条件。
+exec
+/bin/zsh -lc 'rg -n "_exchange_info|cached_get_json|exchange_info_cache|expires_at_ms|threading.Lock|test_binance_exchange_info_cache" backend tests' in /Users/mac/Desktop/clawCoder/AITD
+exec
+/bin/zsh -lc 'rg --files backend tests | rg "binance|exchange_info|cache"' in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+tests/test_binance_exchange_info_cache.py
+tests/test_account_summary_cache.py
+tests/test_binance_closed_trades.py
+backend/exchanges/binance.py
+
+ succeeded in 0ms:
+tests/test_binance_exchange_info_cache.py:16:        def fake_cached_get_json(*_args, **_kwargs):
+tests/test_binance_exchange_info_cache.py:21:        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+tests/test_binance_exchange_info_cache.py:23:        result1 = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:24:        result2 = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:28:        assert gateway._exchange_info_cache == {"symbols": [{"symbol": "BTCUSDT"}]}
+tests/test_binance_exchange_info_cache.py:29:        assert gateway._exchange_info_expires_at_ms > 0
+tests/test_binance_exchange_info_cache.py:36:        def fake_cached_get_json(*_args, **_kwargs):
+tests/test_binance_exchange_info_cache.py:41:        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+tests/test_binance_exchange_info_cache.py:43:        result1 = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:44:        gateway._exchange_info_expires_at_ms = 0
+tests/test_binance_exchange_info_cache.py:45:        result2 = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:58:        lock = threading.Lock()
+tests/test_binance_exchange_info_cache.py:60:        def slow_cached_get_json(*_args, **_kwargs):
+tests/test_binance_exchange_info_cache.py:67:        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", slow_cached_get_json)
+tests/test_binance_exchange_info_cache.py:70:        result_lock = threading.Lock()
+tests/test_binance_exchange_info_cache.py:73:            result = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:92:            "backend.exchanges.binance.cached_get_json", lambda *_args, **_kwargs: None
+tests/test_binance_exchange_info_cache.py:95:        result = gateway._exchange_info(config)
+tests/test_binance_exchange_info_cache.py:98:        assert gateway._exchange_info_cache == {}
+tests/test_binance_exchange_info_cache.py:100:    def test_symbol_info_uses_cached_exchange_info(self, monkeypatch) -> None:
+tests/test_binance_exchange_info_cache.py:105:        def fake_cached_get_json(*_args, **_kwargs):
+tests/test_binance_exchange_info_cache.py:110:        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+backend/engine/CLAUDE.md:32:- **EventBus** 类：标准库实现，零外部依赖，使用 `threading.Lock` 保证线程安全
+tests/test_eventbus.py:204:        lock = threading.Lock()
+tests/test_eventbus.py:226:        lock = threading.Lock()
+tests/test_eventbus.py:249:        lock = threading.Lock()
+backend/engine/events.py:88:        self._lock = threading.Lock()
+backend/sandbox.py:153:_ACTIVE_WORKERS_LOCK = threading.Lock()
+backend/server.py:194:        self.lock = threading.Lock()
+backend/server.py:195:        self.trade_lock = threading.Lock()
+backend/exchanges/binance.py:11:from ..http_client import HttpRequestError, cached_get_json, request_json
+backend/exchanges/binance.py:44:        self._exchange_info_cache: dict[str, Any] | None = None
+backend/exchanges/binance.py:45:        self._exchange_info_expires_at_ms = 0
+backend/exchanges/binance.py:46:        self._exchange_info_lock = threading.Lock()
+backend/exchanges/binance.py:114:        return cached_get_json(
+backend/exchanges/binance.py:290:    def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
+backend/exchanges/binance.py:292:        with self._exchange_info_lock:
+backend/exchanges/binance.py:293:            if self._exchange_info_cache is not None and self._exchange_info_expires_at_ms > now_ms:
+backend/exchanges/binance.py:294:                return self._exchange_info_cache
+backend/exchanges/binance.py:296:            payload = cached_get_json(
+backend/exchanges/binance.py:298:                namespace="binance_live_exchange_info",
+backend/exchanges/binance.py:305:            self._exchange_info_cache = result
+backend/exchanges/binance.py:306:            self._exchange_info_expires_at_ms = now_ms + 6 * 60 * 60 * 1000
+backend/exchanges/binance.py:311:        info = self._exchange_info(config)
+backend/http_client.py:188:def cached_get_json(
+backend/exchanges/bybit.py:6:from ..http_client import cached_get_json
+backend/exchanges/bybit.py:60:        payload = cached_get_json(
+backend/exchanges/okx.py:12:from ..http_client import cached_get_json, request_json
+backend/exchanges/okx.py:84:        payload = cached_get_json(
+
+exec
+/bin/zsh -lc 'git status --short' in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+ M backend/exchanges/binance.py
+?? .autoresearch/archive/2026-04-24-issue-44/
+?? .autoresearch/workflows/issue-41/
+?? tests/test_binance_exchange_info_cache.py
+
+codex
+我已经定位到本次子任务只改了 `backend/exchanges/binance.py` 和新增测试 `tests/test_binance_exchange_info_cache.py`。接下来直接核对实现细节和测试是否覆盖验收条件。
+exec
+/bin/zsh -lc "sed -n '1,360p' backend/exchanges/binance.py" in /Users/mac/Desktop/clawCoder/AITD
+exec
+/bin/zsh -lc "sed -n '1,260p' tests/test_binance_exchange_info_cache.py" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+from __future__ import annotations
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from backend.exchanges.binance import BinanceGateway
+
+
+class TestExchangeInfoCache:
+    def test_uses_memory_cache_on_second_call(self, monkeypatch) -> None:
+        gateway = BinanceGateway()
+        config = {"baseUrl": "https://test.binance.com"}
+        call_count = 0
+
+        def fake_cached_get_json(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"symbols": [{"symbol": "BTCUSDT"}]}
+
+        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+
+        result1 = gateway._exchange_info(config)
+        result2 = gateway._exchange_info(config)
+
+        assert call_count == 1
+        assert result1 == result2 == {"symbols": [{"symbol": "BTCUSDT"}]}
+        assert gateway._exchange_info_cache == {"symbols": [{"symbol": "BTCUSDT"}]}
+        assert gateway._exchange_info_expires_at_ms > 0
+
+    def test_refreshes_after_ttl_expires(self, monkeypatch) -> None:
+        gateway = BinanceGateway()
+        config = {"baseUrl": "https://test.binance.com"}
+        call_count = 0
+
+        def fake_cached_get_json(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            return {"symbols": [{"symbol": f"CALL{call_count}"}]}
+
+        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+
+        result1 = gateway._exchange_info(config)
+        gateway._exchange_info_expires_at_ms = 0
+        result2 = gateway._exchange_info(config)
+
+        assert call_count == 2
+        assert result1 == {"symbols": [{"symbol": "CALL1"}]}
+        assert result2 == {"symbols": [{"symbol": "CALL2"}]}
+
+    def test_thread_safe_concurrent_access(self, monkeypatch) -> None:
+        import threading
+        import time
+
+        gateway = BinanceGateway()
+        config = {"baseUrl": "https://test.binance.com"}
+        call_count = 0
+        lock = threading.Lock()
+
+        def slow_cached_get_json(*_args, **_kwargs):
+            nonlocal call_count
+            with lock:
+                call_count += 1
+            time.sleep(0.01)
+            return {"symbols": [{"symbol": "BTCUSDT"}]}
+
+        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", slow_cached_get_json)
+
+        results: list[dict] = []
+        result_lock = threading.Lock()
+
+        def worker() -> None:
+            result = gateway._exchange_info(config)
+            with result_lock:
+                results.append(result)
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert call_count == 1
+        assert len(results) == 10
+        assert all(r == {"symbols": [{"symbol": "BTCUSDT"}]} for r in results)
+
+    def test_empty_payload_returns_empty_dict(self, monkeypatch) -> None:
+        gateway = BinanceGateway()
+        config = {"baseUrl": "https://test.binance.com"}
+
+        monkeypatch.setattr(
+            "backend.exchanges.binance.cached_get_json", lambda *_args, **_kwargs: None
+        )
+
+        result = gateway._exchange_info(config)
+
+        assert result == {}
+        assert gateway._exchange_info_cache == {}
+
+    def test_symbol_info_uses_cached_exchange_info(self, monkeypatch) -> None:
+        gateway = BinanceGateway()
+        config = {"baseUrl": "https://test.binance.com"}
+        exchange_info_calls = 0
+
+        def fake_cached_get_json(*_args, **_kwargs):
+            nonlocal exchange_info_calls
+            exchange_info_calls += 1
+            return {"symbols": [{"symbol": "ETHUSDT", "filters": []}]}
+
+        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+
+        info1 = gateway._symbol_info(config, "ETHUSDT")
+        info2 = gateway._symbol_info(config, "ETHUSDT")
+
+        assert exchange_info_calls == 1
+        assert info1 == info2
+
+ succeeded in 0ms:
+from __future__ import annotations
+
+import hashlib
+import hmac
+import re
+import threading
+from datetime import datetime, timezone
+from typing import Any
+from urllib.parse import urlencode
+
+from ..http_client import HttpRequestError, cached_get_json, request_json
+from ..utils import clamp, now_iso, num, parse_klines
+from .base import ExchangeGateway
+from .catalog import exchange_config
+
+
+class BinanceGateway(ExchangeGateway):
+    exchange_id = "binance"
+    display_name = "Binance"
+    market_label = "USDT futures"
+    default_backdrop_symbol = "BTCUSDT"
+    public_base_url = exchange_config("binance")["defaultBaseUrl"]
+    symbol_pattern = re.compile(r"^[A-Z0-9]+USDT$")
+    transfer_income_types = {
+        "TRANSFER",
+        "INTERNAL_TRANSFER",
+        "CROSS_COLLATERAL_TRANSFER",
+        "COIN_SWAP_DEPOSIT",
+        "COIN_SWAP_WITHDRAW",
+        "STRATEGY_UMFUTURES_TRANSFER",
+    }
+
+    def __init__(
+        self,
+        *,
+        config_provider=None,
+        network_settings_provider=None,
+    ) -> None:
+        super().__init__(
+            config_provider=config_provider,
+            network_settings_provider=network_settings_provider,
+        )
+        self._server_time_offset_ms = 0
+        self._exchange_info_cache: dict[str, Any] | None = None
+        self._exchange_info_expires_at_ms = 0
+        self._exchange_info_lock = threading.Lock()
+
+    @staticmethod
+    def _exchange_margin_type(value: Any) -> str:
+        normalized = str(value or "cross").strip().lower()
+        if normalized in {"isolated", "isolate"}:
+            return "ISOLATED"
+        return "CROSSED"
+
+    @staticmethod
+    def _exchange_position_side(side: str) -> str:
+        return "SHORT" if str(side or "").strip().lower() == "short" else "LONG"
+
+    def _current_position_mode(self, config: dict[str, Any]) -> str:
+        payload = self._signed_request_json(config, "GET", "/fapi/v1/positionSide/dual")
+        dual_side = payload.get("dualSidePosition") if isinstance(payload, dict) else False
+        if str(dual_side).strip().lower() == "true" or dual_side is True:
+            return "hedge"
+        return "oneway"
+
+    def _resolved_position_mode(self, config: dict[str, Any]) -> str:
+        cached = str(config.get("_resolvedPositionMode") or "").strip().lower()
+        if cached in {"hedge", "oneway"}:
+            return cached
+        fallback = "hedge" if str(config.get("positionMode") or "").strip().lower() == "hedge" else "oneway"
+        config["_resolvedPositionMode"] = fallback
+        return fallback
+
+    def validate_symbol(self, symbol: str) -> bool:
+        normalized = self.normalize_symbol(symbol)
+        if not self.symbol_pattern.fullmatch(normalized):
+            return False
+        try:
+            payload = self._public_get_json(
+                "/fapi/v1/exchangeInfo",
+                namespace="exchange_info",
+                ttl_seconds=6 * 60 * 60,
+                max_stale_seconds=7 * 24 * 60 * 60,
+            )
+            symbols = payload.get("symbols") if isinstance(payload, dict) else []
+            if isinstance(symbols, list) and symbols:
+                return any(self.normalize_symbol(item.get("symbol")) == normalized for item in symbols if isinstance(item, dict))
+        except Exception:
+            pass
+        return True
+
+    def base_asset_from_symbol(self, symbol: str) -> str:
+        normalized = self.normalize_symbol(symbol)
+        return normalized[:-4] if normalized.endswith("USDT") else normalized
+
+    def _query(self, base_url: str, endpoint: str, params: dict[str, Any] | None = None) -> str:
+        params = params or {}
+        filtered = {key: value for key, value in params.items() if value not in (None, "", [])}
+        encoded = urlencode(filtered)
+        if not encoded:
+            return f"{base_url.rstrip('/')}{endpoint}"
+        return f"{base_url.rstrip('/')}{endpoint}?{encoded}"
+
+    def _public_get_json(
+        self,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+        *,
+        namespace: str,
+        ttl_seconds: int,
+        max_stale_seconds: int,
+    ) -> Any:
+        url = self._query(self.public_base_url, endpoint, params)
+        return cached_get_json(
+            url,
+            namespace=f"binance_{namespace}",
+            ttl_seconds=ttl_seconds,
+            max_stale_seconds=max_stale_seconds,
+            timeout_seconds=45,
+            network_settings=self._get_network_settings(),
+        )
+
+    def _parse_klines(self, rows: list[list[Any]] | None) -> list[dict[str, Any]]:
+        return parse_klines(rows)
+
+    def fetch_all_tickers_24h(self) -> list[dict[str, Any]]:
+        payload = self._public_get_json(
+            "/fapi/v1/ticker/24hr",
+            namespace="ticker24h_all",
+            ttl_seconds=60,
+            max_stale_seconds=45 * 60,
+        )
+        return payload if isinstance(payload, list) else []
+
+    def fetch_all_premium_index(self) -> list[dict[str, Any]]:
+        payload = self._public_get_json(
+            "/fapi/v1/premiumIndex",
+            namespace="premium_all",
+            ttl_seconds=60,
+            max_stale_seconds=45 * 60,
+        )
+        return payload if isinstance(payload, list) else []
+
+    def fetch_ticker_24h(self, symbol: str) -> dict[str, Any]:
+        payload = self._public_get_json(
+            "/fapi/v1/ticker/24hr",
+            params={"symbol": self.normalize_symbol(symbol)},
+            namespace="ticker24h_symbol",
+            ttl_seconds=60,
+            max_stale_seconds=45 * 60,
+        )
+        return {
+            "symbol": self.normalize_symbol(symbol),
+            "lastPrice": num(payload.get("lastPrice")),
+            "priceChangePct": num(payload.get("priceChangePercent")),
+            "quoteVolume": num(payload.get("quoteVolume")),
+            "highPrice": num(payload.get("highPrice")),
+            "lowPrice": num(payload.get("lowPrice")),
+            "count": num(payload.get("count")),
+        }
+
+    def fetch_premium(self, symbol: str) -> dict[str, Any]:
+        payload = self._public_get_json(
+            "/fapi/v1/premiumIndex",
+            params={"symbol": self.normalize_symbol(symbol)},
+            namespace="premium_symbol",
+            ttl_seconds=60,
+            max_stale_seconds=45 * 60,
+        )
+        return {
+            "symbol": self.normalize_symbol(symbol),
+            "markPrice": num(payload.get("markPrice")),
+            "indexPrice": num(payload.get("indexPrice")),
+            "fundingPct": (num(payload.get("lastFundingRate")) or 0) * 100,
+            "nextFundingTime": payload.get("nextFundingTime"),
+        }
+
+    def fetch_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        ttl_seconds, max_stale_seconds = self._cache_policy_for_kline_interval(interval)
+        rows = self._public_get_json(
+            "/fapi/v1/klines",
+            params={"symbol": self.normalize_symbol(symbol), "interval": interval, "limit": limit},
+            namespace=f"klines_{interval}",
+            ttl_seconds=ttl_seconds,
+            max_stale_seconds=max_stale_seconds,
+        )
+        return self._parse_klines(rows if isinstance(rows, list) else [])
+
+    def resolved_base_url(self, config: dict[str, Any]) -> str:
+        return str(config.get("baseUrl") or self.public_base_url)
+
+    def live_execution_status(
+        self,
+        live_config: dict[str, Any] | None = None,
+        trading_settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        live_config = live_config or self._get_live_config()
+        issues = []
+        if not live_config.get("apiKey"):
+            issues.append("Live trading API key is missing.")
+        if not live_config.get("apiSecret"):
+            issues.append("Live trading API secret is missing.")
+        resolved_position_mode = "hedge" if str(live_config.get("positionMode") or "").strip().lower() == "hedge" else "oneway"
+        if not issues:
+            try:
+                resolved_position_mode = self._current_position_mode(live_config)
+                live_config["_resolvedPositionMode"] = resolved_position_mode
+            except Exception:
+                live_config["_resolvedPositionMode"] = resolved_position_mode
+        can_sync = not issues
+        can_execute = can_sync and live_config.get("enabled") and not live_config.get("dryRun")
+        return {
+            "configEnabled": live_config.get("enabled") is True,
+            "dryRun": live_config.get("dryRun") is True,
+            "armed": can_execute,
+            "canSync": can_sync,
+            "canExecute": can_execute,
+            "issues": issues,
+            "baseUrl": self.resolved_base_url(live_config),
+            "exchange": self.exchange_id,
+            "positionMode": resolved_position_mode,
+        }
+
+    def _signed_params(self, config: dict[str, Any], params: dict[str, Any] | None = None) -> str:
+        payload = dict(params or {})
+        payload["timestamp"] = str(int(__import__("time").time() * 1000) + int(self._server_time_offset_ms or 0))
+        payload["recvWindow"] = str(int(config.get("recvWindow") or 5000))
+        query_string = urlencode({key: value for key, value in payload.items() if value not in (None, "")})
+        signature = hmac.new(
+            str(config["apiSecret"]).encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return f"{query_string}&signature={signature}"
+
+    def _sync_server_time_offset(self, config: dict[str, Any]) -> None:
+        base_url = self.resolved_base_url(config).rstrip("/")
+        payload = request_json(
+            "GET",
+            f"{base_url}/fapi/v1/time",
+            timeout_seconds=10,
+            network_settings=self._get_network_settings(),
+        )
+        server_time = num(payload.get("serverTime")) if isinstance(payload, dict) else None
+        local_time = int(__import__("time").time() * 1000)
+        if server_time is not None:
+            self._server_time_offset_ms = int(server_time) - local_time
+
+    def _signed_request_json(
+        self,
+        config: dict[str, Any],
+        method: str,
+        endpoint: str,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        base_url = self.resolved_base_url(config).rstrip("/")
+        headers_base = {"X-MBX-APIKEY": config["apiKey"]}
+
+        def send_once() -> Any:
+            query = self._signed_params(config, params)
+            url = f"{base_url}{endpoint}"
+            if method.upper() in {"GET", "DELETE"}:
+                return request_json(
+                    method,
+                    f"{url}?{query}",
+                    headers=headers_base,
+                    timeout_seconds=45,
+                    network_settings=self._get_network_settings(),
+                )
+            return request_json(
+                method,
+                url,
+                headers={
+                    **headers_base,
+                    "content-type": "application/x-www-form-urlencoded",
+                },
+                payload=query,
+                timeout_seconds=45,
+                network_settings=self._get_network_settings(),
+            )
+
+        try:
+            return send_once()
+        except HttpRequestError as error:
+            if "-1021" in str(error):
+                self._sync_server_time_offset(config)
+                return send_once()
+            raise HttpRequestError(f"{error} [endpoint {method.upper()} {endpoint}]") from error
+
+    def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
+        now_ms = int(__import__("time").time() * 1000)
+        with self._exchange_info_lock:
+            if self._exchange_info_cache is not None and self._exchange_info_expires_at_ms > now_ms:
+                return self._exchange_info_cache
+            url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
+            payload = cached_get_json(
+                url,
+                namespace="binance_live_exchange_info",
+                ttl_seconds=6 * 60 * 60,
+                max_stale_seconds=7 * 24 * 60 * 60,
+                timeout_seconds=45,
+                network_settings=self._get_network_settings(),
+            )
+            result = payload if isinstance(payload, dict) else {}
+            self._exchange_info_cache = result
+            self._exchange_info_expires_at_ms = now_ms + 6 * 60 * 60 * 1000
+            return result
+
+    def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
+        normalized = self.normalize_symbol(symbol)
+        info = self._exchange_info(config)
+        for item in info.get("symbols", []):
+            if self.normalize_symbol(item.get("symbol")) == normalized:
+                return item
+        raise ValueError(f"{self.display_name} symbol not found: {normalized}")
+
+    def _step_precision(self, step_size: str | float | int | None) -> int:
+        text = str(step_size or "1")
+        if "." not in text:
+            return 0
+        return len(text.rstrip("0").split(".")[1])
+
+    def _round_down_to_step(self, value: float, step_size: float, precision: int) -> float:
+        units = int(value / step_size)
+        return round(units * step_size, precision)
+
+    def _round_to_step(self, value: float, step_size: float, precision: int) -> float:
+        units = round(value / step_size)
+        return round(units * step_size, precision)
+
+    def normalize_quantity(
+        self,
+        config: dict[str, Any],
+        symbol: str,
+        *,
+        reference_price: float | None = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+    ) -> float:
+        info = self._symbol_info(config, symbol)
+        filters = info.get("filters") or []
+        filter_row = next((item for item in filters if item.get("filterType") in {"MARKET_LOT_SIZE", "LOT_SIZE"}), None)
+        if not filter_row:
+            raise ValueError(f"Could not determine lot size for {self.normalize_symbol(symbol)}")
+        step_size = num(filter_row.get("stepSize")) or 1
+        min_qty = num(filter_row.get("minQty")) or 0
+        precision = self._step_precision(filter_row.get("stepSize"))
+        raw_quantity = quantity if quantity is not None else ((notional_usd or 0) / (reference_price or 0) if reference_price else 0)
+        normalized = self._round_down_to_step(max(0.0, float(raw_quantity or 0)), step_size, precision)
+        if normalized < min_qty:
+            raise ValueError(f"Quantity for {self.normalize_symbol(symbol)} is below exchange minimum.")
+        return normalized
+
+    def normalize_price(self, config: dict[str, Any], symbol: str, price: float) -> float:
+        info = self._symbol_info(config, symbol)
+        filters = info.get("filters") or []
+        filter_row = next((item for item in filters if item.get("filterType") == "PRICE_FILTER"), None)
+        if not filter_row:
+            return float(price)
+        tick_size = num(filter_row.get("tickSize")) or 0
+
+exec
+/bin/zsh -lc 'git diff -- backend/exchanges/binance.py tests/test_binance_exchange_info_cache.py' in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+diff --git a/backend/exchanges/binance.py b/backend/exchanges/binance.py
+index 90b6ca6..877fe91 100644
+--- a/backend/exchanges/binance.py
++++ b/backend/exchanges/binance.py
+@@ -3,6 +3,7 @@ from __future__ import annotations
+ import hashlib
+ import hmac
+ import re
++import threading
+ from datetime import datetime, timezone
+ from typing import Any
+ from urllib.parse import urlencode
+@@ -40,6 +41,9 @@ class BinanceGateway(ExchangeGateway):
+             network_settings_provider=network_settings_provider,
+         )
+         self._server_time_offset_ms = 0
++        self._exchange_info_cache: dict[str, Any] | None = None
++        self._exchange_info_expires_at_ms = 0
++        self._exchange_info_lock = threading.Lock()
+ 
+     @staticmethod
+     def _exchange_margin_type(value: Any) -> str:
+@@ -284,16 +288,23 @@ class BinanceGateway(ExchangeGateway):
+             raise HttpRequestError(f"{error} [endpoint {method.upper()} {endpoint}]") from error
+ 
+     def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
+-        url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
+-        payload = cached_get_json(
+-            url,
+-            namespace="binance_live_exchange_info",
+-            ttl_seconds=6 * 60 * 60,
+-            max_stale_seconds=7 * 24 * 60 * 60,
+-            timeout_seconds=45,
+-            network_settings=self._get_network_settings(),
+-        )
+-        return payload if isinstance(payload, dict) else {}
++        now_ms = int(__import__("time").time() * 1000)
++        with self._exchange_info_lock:
++            if self._exchange_info_cache is not None and self._exchange_info_expires_at_ms > now_ms:
++                return self._exchange_info_cache
++            url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
++            payload = cached_get_json(
++                url,
++                namespace="binance_live_exchange_info",
++                ttl_seconds=6 * 60 * 60,
++                max_stale_seconds=7 * 24 * 60 * 60,
++                timeout_seconds=45,
++                network_settings=self._get_network_settings(),
++            )
++            result = payload if isinstance(payload, dict) else {}
++            self._exchange_info_cache = result
++            self._exchange_info_expires_at_ms = now_ms + 6 * 60 * 60 * 1000
++            return result
+ 
+     def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
+         normalized = self.normalize_symbol(symbol)
+
+codex
+实现本身已经具备内存缓存和锁，但我需要再确认一个关键点：这个缓存是不是错误地跨 `config/baseUrl` 复用了。如果是，这会直接影响正确性评分。
+exec
+/bin/zsh -lc "nl -ba backend/exchanges/binance.py | sed -n '34,315p'" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+    34	        self,
+    35	        *,
+    36	        config_provider=None,
+    37	        network_settings_provider=None,
+    38	    ) -> None:
+    39	        super().__init__(
+    40	            config_provider=config_provider,
+    41	            network_settings_provider=network_settings_provider,
+    42	        )
+    43	        self._server_time_offset_ms = 0
+    44	        self._exchange_info_cache: dict[str, Any] | None = None
+    45	        self._exchange_info_expires_at_ms = 0
+    46	        self._exchange_info_lock = threading.Lock()
+    47	
+    48	    @staticmethod
+    49	    def _exchange_margin_type(value: Any) -> str:
+    50	        normalized = str(value or "cross").strip().lower()
+    51	        if normalized in {"isolated", "isolate"}:
+    52	            return "ISOLATED"
+    53	        return "CROSSED"
+    54	
+    55	    @staticmethod
+    56	    def _exchange_position_side(side: str) -> str:
+    57	        return "SHORT" if str(side or "").strip().lower() == "short" else "LONG"
+    58	
+    59	    def _current_position_mode(self, config: dict[str, Any]) -> str:
+    60	        payload = self._signed_request_json(config, "GET", "/fapi/v1/positionSide/dual")
+    61	        dual_side = payload.get("dualSidePosition") if isinstance(payload, dict) else False
+    62	        if str(dual_side).strip().lower() == "true" or dual_side is True:
+    63	            return "hedge"
+    64	        return "oneway"
+    65	
+    66	    def _resolved_position_mode(self, config: dict[str, Any]) -> str:
+    67	        cached = str(config.get("_resolvedPositionMode") or "").strip().lower()
+    68	        if cached in {"hedge", "oneway"}:
+    69	            return cached
+    70	        fallback = "hedge" if str(config.get("positionMode") or "").strip().lower() == "hedge" else "oneway"
+    71	        config["_resolvedPositionMode"] = fallback
+    72	        return fallback
+    73	
+    74	    def validate_symbol(self, symbol: str) -> bool:
+    75	        normalized = self.normalize_symbol(symbol)
+    76	        if not self.symbol_pattern.fullmatch(normalized):
+    77	            return False
+    78	        try:
+    79	            payload = self._public_get_json(
+    80	                "/fapi/v1/exchangeInfo",
+    81	                namespace="exchange_info",
+    82	                ttl_seconds=6 * 60 * 60,
+    83	                max_stale_seconds=7 * 24 * 60 * 60,
+    84	            )
+    85	            symbols = payload.get("symbols") if isinstance(payload, dict) else []
+    86	            if isinstance(symbols, list) and symbols:
+    87	                return any(self.normalize_symbol(item.get("symbol")) == normalized for item in symbols if isinstance(item, dict))
+    88	        except Exception:
+    89	            pass
+    90	        return True
+    91	
+    92	    def base_asset_from_symbol(self, symbol: str) -> str:
+    93	        normalized = self.normalize_symbol(symbol)
+    94	        return normalized[:-4] if normalized.endswith("USDT") else normalized
+    95	
+    96	    def _query(self, base_url: str, endpoint: str, params: dict[str, Any] | None = None) -> str:
+    97	        params = params or {}
+    98	        filtered = {key: value for key, value in params.items() if value not in (None, "", [])}
+    99	        encoded = urlencode(filtered)
+   100	        if not encoded:
+   101	            return f"{base_url.rstrip('/')}{endpoint}"
+   102	        return f"{base_url.rstrip('/')}{endpoint}?{encoded}"
+   103	
+   104	    def _public_get_json(
+   105	        self,
+   106	        endpoint: str,
+   107	        params: dict[str, Any] | None = None,
+   108	        *,
+   109	        namespace: str,
+   110	        ttl_seconds: int,
+   111	        max_stale_seconds: int,
+   112	    ) -> Any:
+   113	        url = self._query(self.public_base_url, endpoint, params)
+   114	        return cached_get_json(
+   115	            url,
+   116	            namespace=f"binance_{namespace}",
+   117	            ttl_seconds=ttl_seconds,
+   118	            max_stale_seconds=max_stale_seconds,
+   119	            timeout_seconds=45,
+   120	            network_settings=self._get_network_settings(),
+   121	        )
+   122	
+   123	    def _parse_klines(self, rows: list[list[Any]] | None) -> list[dict[str, Any]]:
+   124	        return parse_klines(rows)
+   125	
+   126	    def fetch_all_tickers_24h(self) -> list[dict[str, Any]]:
+   127	        payload = self._public_get_json(
+   128	            "/fapi/v1/ticker/24hr",
+   129	            namespace="ticker24h_all",
+   130	            ttl_seconds=60,
+   131	            max_stale_seconds=45 * 60,
+   132	        )
+   133	        return payload if isinstance(payload, list) else []
+   134	
+   135	    def fetch_all_premium_index(self) -> list[dict[str, Any]]:
+   136	        payload = self._public_get_json(
+   137	            "/fapi/v1/premiumIndex",
+   138	            namespace="premium_all",
+   139	            ttl_seconds=60,
+   140	            max_stale_seconds=45 * 60,
+   141	        )
+   142	        return payload if isinstance(payload, list) else []
+   143	
+   144	    def fetch_ticker_24h(self, symbol: str) -> dict[str, Any]:
+   145	        payload = self._public_get_json(
+   146	            "/fapi/v1/ticker/24hr",
+   147	            params={"symbol": self.normalize_symbol(symbol)},
+   148	            namespace="ticker24h_symbol",
+   149	            ttl_seconds=60,
+   150	            max_stale_seconds=45 * 60,
+   151	        )
+   152	        return {
+   153	            "symbol": self.normalize_symbol(symbol),
+   154	            "lastPrice": num(payload.get("lastPrice")),
+   155	            "priceChangePct": num(payload.get("priceChangePercent")),
+   156	            "quoteVolume": num(payload.get("quoteVolume")),
+   157	            "highPrice": num(payload.get("highPrice")),
+   158	            "lowPrice": num(payload.get("lowPrice")),
+   159	            "count": num(payload.get("count")),
+   160	        }
+   161	
+   162	    def fetch_premium(self, symbol: str) -> dict[str, Any]:
+   163	        payload = self._public_get_json(
+   164	            "/fapi/v1/premiumIndex",
+   165	            params={"symbol": self.normalize_symbol(symbol)},
+   166	            namespace="premium_symbol",
+   167	            ttl_seconds=60,
+   168	            max_stale_seconds=45 * 60,
+   169	        )
+   170	        return {
+   171	            "symbol": self.normalize_symbol(symbol),
+   172	            "markPrice": num(payload.get("markPrice")),
+   173	            "indexPrice": num(payload.get("indexPrice")),
+   174	            "fundingPct": (num(payload.get("lastFundingRate")) or 0) * 100,
+   175	            "nextFundingTime": payload.get("nextFundingTime"),
+   176	        }
+   177	
+   178	    def fetch_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+   179	        ttl_seconds, max_stale_seconds = self._cache_policy_for_kline_interval(interval)
+   180	        rows = self._public_get_json(
+   181	            "/fapi/v1/klines",
+   182	            params={"symbol": self.normalize_symbol(symbol), "interval": interval, "limit": limit},
+   183	            namespace=f"klines_{interval}",
+   184	            ttl_seconds=ttl_seconds,
+   185	            max_stale_seconds=max_stale_seconds,
+   186	        )
+   187	        return self._parse_klines(rows if isinstance(rows, list) else [])
+   188	
+   189	    def resolved_base_url(self, config: dict[str, Any]) -> str:
+   190	        return str(config.get("baseUrl") or self.public_base_url)
+   191	
+   192	    def live_execution_status(
+   193	        self,
+   194	        live_config: dict[str, Any] | None = None,
+   195	        trading_settings: dict[str, Any] | None = None,
+   196	    ) -> dict[str, Any]:
+   197	        live_config = live_config or self._get_live_config()
+   198	        issues = []
+   199	        if not live_config.get("apiKey"):
+   200	            issues.append("Live trading API key is missing.")
+   201	        if not live_config.get("apiSecret"):
+   202	            issues.append("Live trading API secret is missing.")
+   203	        resolved_position_mode = "hedge" if str(live_config.get("positionMode") or "").strip().lower() == "hedge" else "oneway"
+   204	        if not issues:
+   205	            try:
+   206	                resolved_position_mode = self._current_position_mode(live_config)
+   207	                live_config["_resolvedPositionMode"] = resolved_position_mode
+   208	            except Exception:
+   209	                live_config["_resolvedPositionMode"] = resolved_position_mode
+   210	        can_sync = not issues
+   211	        can_execute = can_sync and live_config.get("enabled") and not live_config.get("dryRun")
+   212	        return {
+   213	            "configEnabled": live_config.get("enabled") is True,
+   214	            "dryRun": live_config.get("dryRun") is True,
+   215	            "armed": can_execute,
+   216	            "canSync": can_sync,
+   217	            "canExecute": can_execute,
+   218	            "issues": issues,
+   219	            "baseUrl": self.resolved_base_url(live_config),
+   220	            "exchange": self.exchange_id,
+   221	            "positionMode": resolved_position_mode,
+   222	        }
+   223	
+   224	    def _signed_params(self, config: dict[str, Any], params: dict[str, Any] | None = None) -> str:
+   225	        payload = dict(params or {})
+   226	        payload["timestamp"] = str(int(__import__("time").time() * 1000) + int(self._server_time_offset_ms or 0))
+   227	        payload["recvWindow"] = str(int(config.get("recvWindow") or 5000))
+   228	        query_string = urlencode({key: value for key, value in payload.items() if value not in (None, "")})
+   229	        signature = hmac.new(
+   230	            str(config["apiSecret"]).encode("utf-8"),
+   231	            query_string.encode("utf-8"),
+   232	            hashlib.sha256,
+   233	        ).hexdigest()
+   234	        return f"{query_string}&signature={signature}"
+   235	
+   236	    def _sync_server_time_offset(self, config: dict[str, Any]) -> None:
+   237	        base_url = self.resolved_base_url(config).rstrip("/")
+   238	        payload = request_json(
+   239	            "GET",
+   240	            f"{base_url}/fapi/v1/time",
+   241	            timeout_seconds=10,
+   242	            network_settings=self._get_network_settings(),
+   243	        )
+   244	        server_time = num(payload.get("serverTime")) if isinstance(payload, dict) else None
+   245	        local_time = int(__import__("time").time() * 1000)
+   246	        if server_time is not None:
+   247	            self._server_time_offset_ms = int(server_time) - local_time
+   248	
+   249	    def _signed_request_json(
+   250	        self,
+   251	        config: dict[str, Any],
+   252	        method: str,
+   253	        endpoint: str,
+   254	        params: dict[str, Any] | None = None,
+   255	    ) -> Any:
+   256	        base_url = self.resolved_base_url(config).rstrip("/")
+   257	        headers_base = {"X-MBX-APIKEY": config["apiKey"]}
+   258	
+   259	        def send_once() -> Any:
+   260	            query = self._signed_params(config, params)
+   261	            url = f"{base_url}{endpoint}"
+   262	            if method.upper() in {"GET", "DELETE"}:
+   263	                return request_json(
+   264	                    method,
+   265	                    f"{url}?{query}",
+   266	                    headers=headers_base,
+   267	                    timeout_seconds=45,
+   268	                    network_settings=self._get_network_settings(),
+   269	                )
+   270	            return request_json(
+   271	                method,
+   272	                url,
+   273	                headers={
+   274	                    **headers_base,
+   275	                    "content-type": "application/x-www-form-urlencoded",
+   276	                },
+   277	                payload=query,
+   278	                timeout_seconds=45,
+   279	                network_settings=self._get_network_settings(),
+   280	            )
+   281	
+   282	        try:
+   283	            return send_once()
+   284	        except HttpRequestError as error:
+   285	            if "-1021" in str(error):
+   286	                self._sync_server_time_offset(config)
+   287	                return send_once()
+   288	            raise HttpRequestError(f"{error} [endpoint {method.upper()} {endpoint}]") from error
+   289	
+   290	    def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
+   291	        now_ms = int(__import__("time").time() * 1000)
+   292	        with self._exchange_info_lock:
+   293	            if self._exchange_info_cache is not None and self._exchange_info_expires_at_ms > now_ms:
+   294	                return self._exchange_info_cache
+   295	            url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
+   296	            payload = cached_get_json(
+   297	                url,
+   298	                namespace="binance_live_exchange_info",
+   299	                ttl_seconds=6 * 60 * 60,
+   300	                max_stale_seconds=7 * 24 * 60 * 60,
+   301	                timeout_seconds=45,
+   302	                network_settings=self._get_network_settings(),
+   303	            )
+   304	            result = payload if isinstance(payload, dict) else {}
+   305	            self._exchange_info_cache = result
+   306	            self._exchange_info_expires_at_ms = now_ms + 6 * 60 * 60 * 1000
+   307	            return result
+   308	
+   309	    def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
+   310	        normalized = self.normalize_symbol(symbol)
+   311	        info = self._exchange_info(config)
+   312	        for item in info.get("symbols", []):
+   313	            if self.normalize_symbol(item.get("symbol")) == normalized:
+   314	                return item
+   315	        raise ValueError(f"{self.display_name} symbol not found: {normalized}")
+
+exec
+/bin/zsh -lc "nl -ba tests/test_binance_exchange_info_cache.py | sed -n '1,220p'" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+     1	from __future__ import annotations
+     2	
+     3	from unittest.mock import MagicMock
+     4	
+     5	import pytest
+     6	
+     7	from backend.exchanges.binance import BinanceGateway
+     8	
+     9	
+    10	class TestExchangeInfoCache:
+    11	    def test_uses_memory_cache_on_second_call(self, monkeypatch) -> None:
+    12	        gateway = BinanceGateway()
+    13	        config = {"baseUrl": "https://test.binance.com"}
+    14	        call_count = 0
+    15	
+    16	        def fake_cached_get_json(*_args, **_kwargs):
+    17	            nonlocal call_count
+    18	            call_count += 1
+    19	            return {"symbols": [{"symbol": "BTCUSDT"}]}
+    20	
+    21	        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+    22	
+    23	        result1 = gateway._exchange_info(config)
+    24	        result2 = gateway._exchange_info(config)
+    25	
+    26	        assert call_count == 1
+    27	        assert result1 == result2 == {"symbols": [{"symbol": "BTCUSDT"}]}
+    28	        assert gateway._exchange_info_cache == {"symbols": [{"symbol": "BTCUSDT"}]}
+    29	        assert gateway._exchange_info_expires_at_ms > 0
+    30	
+    31	    def test_refreshes_after_ttl_expires(self, monkeypatch) -> None:
+    32	        gateway = BinanceGateway()
+    33	        config = {"baseUrl": "https://test.binance.com"}
+    34	        call_count = 0
+    35	
+    36	        def fake_cached_get_json(*_args, **_kwargs):
+    37	            nonlocal call_count
+    38	            call_count += 1
+    39	            return {"symbols": [{"symbol": f"CALL{call_count}"}]}
+    40	
+    41	        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+    42	
+    43	        result1 = gateway._exchange_info(config)
+    44	        gateway._exchange_info_expires_at_ms = 0
+    45	        result2 = gateway._exchange_info(config)
+    46	
+    47	        assert call_count == 2
+    48	        assert result1 == {"symbols": [{"symbol": "CALL1"}]}
+    49	        assert result2 == {"symbols": [{"symbol": "CALL2"}]}
+    50	
+    51	    def test_thread_safe_concurrent_access(self, monkeypatch) -> None:
+    52	        import threading
+    53	        import time
+    54	
+    55	        gateway = BinanceGateway()
+    56	        config = {"baseUrl": "https://test.binance.com"}
+    57	        call_count = 0
+    58	        lock = threading.Lock()
+    59	
+    60	        def slow_cached_get_json(*_args, **_kwargs):
+    61	            nonlocal call_count
+    62	            with lock:
+    63	                call_count += 1
+    64	            time.sleep(0.01)
+    65	            return {"symbols": [{"symbol": "BTCUSDT"}]}
+    66	
+    67	        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", slow_cached_get_json)
+    68	
+    69	        results: list[dict] = []
+    70	        result_lock = threading.Lock()
+    71	
+    72	        def worker() -> None:
+    73	            result = gateway._exchange_info(config)
+    74	            with result_lock:
+    75	                results.append(result)
+    76	
+    77	        threads = [threading.Thread(target=worker) for _ in range(10)]
+    78	        for t in threads:
+    79	            t.start()
+    80	        for t in threads:
+    81	            t.join()
+    82	
+    83	        assert call_count == 1
+    84	        assert len(results) == 10
+    85	        assert all(r == {"symbols": [{"symbol": "BTCUSDT"}]} for r in results)
+    86	
+    87	    def test_empty_payload_returns_empty_dict(self, monkeypatch) -> None:
+    88	        gateway = BinanceGateway()
+    89	        config = {"baseUrl": "https://test.binance.com"}
+    90	
+    91	        monkeypatch.setattr(
+    92	            "backend.exchanges.binance.cached_get_json", lambda *_args, **_kwargs: None
+    93	        )
+    94	
+    95	        result = gateway._exchange_info(config)
+    96	
+    97	        assert result == {}
+    98	        assert gateway._exchange_info_cache == {}
+    99	
+   100	    def test_symbol_info_uses_cached_exchange_info(self, monkeypatch) -> None:
+   101	        gateway = BinanceGateway()
+   102	        config = {"baseUrl": "https://test.binance.com"}
+   103	        exchange_info_calls = 0
+   104	
+   105	        def fake_cached_get_json(*_args, **_kwargs):
+   106	            nonlocal exchange_info_calls
+   107	            exchange_info_calls += 1
+   108	            return {"symbols": [{"symbol": "ETHUSDT", "filters": []}]}
+   109	
+   110	        monkeypatch.setattr("backend.exchanges.binance.cached_get_json", fake_cached_get_json)
+   111	
+   112	        info1 = gateway._symbol_info(config, "ETHUSDT")
+   113	        info2 = gateway._symbol_info(config, "ETHUSDT")
+   114	
+   115	        assert exchange_info_calls == 1
+   116	        assert info1 == info2
+
+exec
+/bin/zsh -lc "rg -n \"BinanceGateway\\(|exchange_id = \\\"binance\\\"|resolved_base_url\\(|_get_live_config\\(|_symbol_info\\(\" backend tests" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+tests/test_binance_exchange_info_cache.py:12:        gateway = BinanceGateway()
+tests/test_binance_exchange_info_cache.py:32:        gateway = BinanceGateway()
+tests/test_binance_exchange_info_cache.py:55:        gateway = BinanceGateway()
+tests/test_binance_exchange_info_cache.py:88:        gateway = BinanceGateway()
+tests/test_binance_exchange_info_cache.py:101:        gateway = BinanceGateway()
+tests/test_binance_exchange_info_cache.py:112:        info1 = gateway._symbol_info(config, "ETHUSDT")
+tests/test_binance_exchange_info_cache.py:113:        info2 = gateway._symbol_info(config, "ETHUSDT")
+tests/test_exchange_gateway_base.py:39:    def resolved_base_url(self, config: dict[str, Any]) -> str:
+tests/test_exchange_gateway_base.py:104:        assert gateway._get_live_config() == {}
+tests/test_exchange_gateway_base.py:117:        assert gateway._get_live_config() == expected_config
+tests/test_exchange_gateway_base.py:141:        assert gateway._get_live_config() == config
+backend/test_market.py:6:    exchange_id = "binance"
+tests/test_binance_closed_trades.py:15:    gateway = BinanceGateway()
+tests/test_market_bulk.py:15:        gateway.exchange_id = "binance"
+backend/exchanges/binance.py:17:class BinanceGateway(ExchangeGateway):
+backend/exchanges/binance.py:18:    exchange_id = "binance"
+backend/exchanges/binance.py:189:    def resolved_base_url(self, config: dict[str, Any]) -> str:
+backend/exchanges/binance.py:197:        live_config = live_config or self._get_live_config()
+backend/exchanges/binance.py:219:            "baseUrl": self.resolved_base_url(live_config),
+backend/exchanges/binance.py:237:        base_url = self.resolved_base_url(config).rstrip("/")
+backend/exchanges/binance.py:256:        base_url = self.resolved_base_url(config).rstrip("/")
+backend/exchanges/binance.py:295:            url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
+backend/exchanges/binance.py:309:    def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
+backend/exchanges/binance.py:340:        info = self._symbol_info(config, symbol)
+backend/exchanges/binance.py:355:        info = self._symbol_info(config, symbol)
+backend/exchanges/okx.py:51:    def resolved_base_url(self, config: dict[str, Any]) -> str:
+backend/exchanges/okx.py:109:        url = f"{self.resolved_base_url(config)}{request_path}"
+backend/exchanges/okx.py:147:    def _symbol_info(self, symbol: str) -> dict[str, Any]:
+backend/exchanges/okx.py:331:        live_config = live_config or self._get_live_config()
+backend/exchanges/okx.py:350:            "baseUrl": self.resolved_base_url(live_config),
+backend/exchanges/okx.py:363:        info = self._symbol_info(symbol)
+backend/exchanges/okx.py:377:        info = self._symbol_info(symbol)
+backend/exchanges/okx.py:415:                contract_value_usd = self._contract_notional_usd(self._symbol_info(symbol), mark_price)
+backend/exchanges/CLAUDE.md:7:- **基类提供 `_get_live_config()` 和 `_get_network_settings()` 辅助方法** — 子类应使用这些方法获取配置，而非直接访问 provider 属性。当 provider 为 None 时返回空字典，避免空指针。
+backend/exchanges/base.py:34:    def _get_live_config(self) -> dict[str, Any]:
+backend/exchanges/base.py:93:    def resolved_base_url(self, config: dict[str, Any]) -> str:
+backend/live_trading.py:18:def resolved_base_url(config: dict[str, Any]) -> str:
+backend/live_trading.py:20:    return gateway.resolved_base_url(config)
+backend/exchanges/__init__.py:22:    _GATEWAYS["binance"] = BinanceGateway(
+backend/exchanges/bybit.py:38:    def resolved_base_url(self, config: dict[str, Any]) -> str:
+backend/exchanges/bybit.py:173:        live_config = live_config or self._get_live_config()
+backend/exchanges/bybit.py:182:            "baseUrl": self.resolved_base_url(live_config),
+
+exec
+/bin/zsh -lc "sed -n '1,160p' backend/exchanges/__init__.py" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+from __future__ import annotations
+
+from typing import Any
+
+from .base import ExchangeGateway
+
+
+_GATEWAYS: dict[str, ExchangeGateway] = {}
+
+
+def _ensure_gateways(
+    *,
+    config_provider=None,
+    network_settings_provider=None,
+) -> None:
+    if _GATEWAYS:
+        return
+    from .binance import BinanceGateway
+    from .bybit import BybitGateway
+    from .okx import OkxGateway
+
+    _GATEWAYS["binance"] = BinanceGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+    _GATEWAYS["bybit"] = BybitGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+    _GATEWAYS["okx"] = OkxGateway(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+
+
+def get_exchange_gateway(
+    exchange_id: str | None,
+    *,
+    config_provider=None,
+    network_settings_provider=None,
+) -> ExchangeGateway:
+    _ensure_gateways(
+        config_provider=config_provider,
+        network_settings_provider=network_settings_provider,
+    )
+    key = str(exchange_id or "binance").strip().lower() or "binance"
+    if key not in _GATEWAYS:
+        supported = ", ".join(sorted(_GATEWAYS))
+        raise ValueError(f"Unsupported exchange: {key}. Supported exchanges: {supported}.")
+    return _GATEWAYS[key]
+
+
+def get_live_exchange_gateway(live_config: dict[str, Any] | None = None) -> ExchangeGateway:
+    if live_config is None:
+        from ..config import read_live_trading_config
+
+        live_config = read_live_trading_config()
+    return get_exchange_gateway(live_config.get("exchange"))
+
+
+def get_active_exchange_gateway(
+    exchange_id: str | None = None,
+    settings: dict[str, Any] | None = None,
+) -> ExchangeGateway:
+    if exchange_id is not None:
+        return get_exchange_gateway(exchange_id)
+    if settings is None:
+        from ..config import read_trading_settings
+
+        settings = read_trading_settings()
+    return get_exchange_gateway(settings.get("activeExchange"))
+
+
+def active_exchange_id(
+    exchange_id: str | None = None,
+    settings: dict[str, Any] | None = None,
+) -> str:
+    if exchange_id is not None:
+        return str(exchange_id).strip().lower() or "binance"
+    if settings is None:
+        from ..config import read_trading_settings
+
+        settings = read_trading_settings()
+    return str(settings.get("activeExchange") or "binance").strip().lower() or "binance"
+
+
+def base_asset_for_symbol(symbol: str, exchange_id: str | None = None) -> str:
+    normalized = str(symbol or "").strip().upper()
+    try:
+        return get_exchange_gateway(exchange_id).base_asset_from_symbol(normalized)
+    except Exception:
+        if normalized.endswith("USDT"):
+            return normalized[:-4]
+        if "-" in normalized:
+            return normalized.split("-", 1)[0]
+        return normalized
+
+exec
+/bin/zsh -lc "sed -n '1,140p' backend/live_trading.py" in /Users/mac/Desktop/clawCoder/AITD
+exec
+/bin/zsh -lc "sed -n '1,140p' backend/exchanges/base.py" in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Any, Protocol
+
+
+class ConfigProvider(Protocol):
+    """Protocol for live trading configuration providers."""
+
+    def __call__(self) -> dict[str, Any]: ...
+
+
+class NetworkSettingsProvider(Protocol):
+    """Protocol for network settings providers."""
+
+    def __call__(self) -> dict[str, Any]: ...
+
+
+class ExchangeGateway(ABC):
+    exchange_id: str = ""
+    display_name: str = ""
+    market_label: str = ""
+    default_backdrop_symbol: str = ""
+
+    def __init__(
+        self,
+        *,
+        config_provider: ConfigProvider | None = None,
+        network_settings_provider: NetworkSettingsProvider | None = None,
+    ) -> None:
+        self._config_provider = config_provider
+        self._network_settings_provider = network_settings_provider
+
+    def _get_live_config(self) -> dict[str, Any]:
+        if self._config_provider is not None:
+            return self._config_provider()
+        return {}
+
+    def _get_network_settings(self) -> dict[str, Any]:
+        if self._network_settings_provider is not None:
+            return self._network_settings_provider()
+        return {}
+
+    def candidate_symbol_hint(self) -> str:
+        return f"{self.display_name} {self.market_label} symbols".strip()
+
+    def normalize_symbol(self, symbol: str) -> str:
+        return str(symbol or "").strip().upper()
+
+    def _cache_policy_for_kline_interval(self, interval: str) -> tuple[int, int]:
+        interval = str(interval or "").lower()
+        if interval == "1m":
+            return 20, 60 * 60
+        if interval == "5m":
+            return 30, 2 * 60 * 60
+        if interval == "15m":
+            return 60, 3 * 60 * 60
+        if interval == "1h":
+            return 5 * 60, 12 * 60 * 60
+        if interval == "4h":
+            return 15 * 60, 48 * 60 * 60
+        return 60, 6 * 60 * 60
+
+    @abstractmethod
+    def validate_symbol(self, symbol: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def base_asset_from_symbol(self, symbol: str) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_all_tickers_24h(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_all_premium_index(self) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_ticker_24h(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_premium(self, symbol: str) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_klines(self, symbol: str, interval: str, limit: int) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def resolved_base_url(self, config: dict[str, Any]) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def live_execution_status(
+        self,
+        live_config: dict[str, Any] | None = None,
+        trading_settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def fetch_account_snapshot(self, config: dict[str, Any], session_started_at: str | None = None) -> dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def normalize_quantity(
+        self,
+        config: dict[str, Any],
+        symbol: str,
+        *,
+        reference_price: float | None = None,
+        quantity: float | None = None,
+        notional_usd: float | None = None,
+    ) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
+    def normalize_price(self, config: dict[str, Any], symbol: str, price: float) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
+    def apply_symbol_settings(self, config: dict[str, Any], symbol: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel_all_open_orders(self, config: dict[str, Any], symbol: str) -> Any:
+        raise NotImplementedError
+
+    @abstractmethod
+    def place_market_order(
+        self,
+        config: dict[str, Any],
+        *,
+        symbol: str,
+        side: str,
+        quantity: float,
+        reduce_only: bool = False,
+
+ succeeded in 0ms:
+from __future__ import annotations
+
+from typing import Any
+
+from .config import read_live_trading_config
+from .exchanges import get_live_exchange_gateway
+
+
+def live_execution_status(
+    live_config: dict[str, Any] | None = None,
+    trading_settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    live_config = live_config or read_live_trading_config()
+    gateway = get_live_exchange_gateway(live_config)
+    return gateway.live_execution_status(live_config, trading_settings)
+
+
+def resolved_base_url(config: dict[str, Any]) -> str:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.resolved_base_url(config)
+
+
+def normalize_quantity(config: dict[str, Any], symbol: str, *, reference_price: float | None = None, quantity: float | None = None, notional_usd: float | None = None) -> float:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.normalize_quantity(
+        config,
+        symbol,
+        reference_price=reference_price,
+        quantity=quantity,
+        notional_usd=notional_usd,
+    )
+
+
+def normalize_price(config: dict[str, Any], symbol: str, price: float) -> float:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.normalize_price(config, symbol, price)
+
+
+def apply_symbol_settings(config: dict[str, Any], symbol: str) -> None:
+    gateway = get_live_exchange_gateway(config)
+    gateway.apply_symbol_settings(config, symbol)
+
+
+def fetch_account_snapshot(config: dict[str, Any], session_started_at: str | None = None) -> dict[str, Any]:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.fetch_account_snapshot(config, session_started_at=session_started_at)
+
+
+def cancel_all_open_orders(config: dict[str, Any], symbol: str) -> Any:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.cancel_all_open_orders(config, symbol)
+
+
+def place_market_order(config: dict[str, Any], *, symbol: str, side: str, quantity: float, reduce_only: bool = False) -> dict[str, Any]:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.place_market_order(
+        config,
+        symbol=symbol,
+        side=side,
+        quantity=quantity,
+        reduce_only=reduce_only,
+    )
+
+
+def place_protection_orders(config: dict[str, Any], *, symbol: str, position_side: str, stop_loss: float | None, take_profit: float | None) -> list[dict[str, Any]]:
+    gateway = get_live_exchange_gateway(config)
+    return gateway.place_protection_orders(
+        config,
+        symbol=symbol,
+        position_side=position_side,
+        stop_loss=stop_loss,
+        take_profit=take_profit,
+    )
+
+codex
+我会补做验证，至少确认新增测试和相关回归测试的真实结果；“现有测试全部通过”不能只看代码表面。
+exec
+/bin/zsh -lc 'pytest -q tests/test_binance_exchange_info_cache.py' in /Users/mac/Desktop/clawCoder/AITD
+ exited 127 in 0ms:
+zsh:1: command not found: pytest
+
+exec
+/bin/zsh -lc 'pytest -q tests/test_binance_closed_trades.py tests/test_exchange_gateway_base.py' in /Users/mac/Desktop/clawCoder/AITD
+ exited 127 in 0ms:
+zsh:1: command not found: pytest
+
+codex
+本地环境没有 `pytest` 可执行文件，我改用 `python -m pytest` 再验证一次。若依赖仍缺失，我会把它记为测试执行阻塞，而不是假定通过。
+exec
+/bin/zsh -lc 'python -m pytest -q tests/test_binance_exchange_info_cache.py' in /Users/mac/Desktop/clawCoder/AITD
+exec
+/bin/zsh -lc 'python -m pytest -q tests/test_binance_closed_trades.py tests/test_exchange_gateway_base.py' in /Users/mac/Desktop/clawCoder/AITD
+ exited 127 in 0ms:
+zsh:1: command not found: python
+
+ exited 127 in 0ms:
+zsh:1: command not found: python
+
+exec
+/bin/zsh -lc 'python3 --version' in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 0ms:
+Python 3.9.6
+
+exec
+/bin/zsh -lc 'python3 -m pytest -q tests/test_binance_closed_trades.py tests/test_exchange_gateway_base.py' in /Users/mac/Desktop/clawCoder/AITD
+exec
+/bin/zsh -lc 'python3 -m pytest -q tests/test_binance_exchange_info_cache.py' in /Users/mac/Desktop/clawCoder/AITD
+ succeeded in 156ms:
+...............                                                          [100%]
+15 passed in 0.01s
+
+ succeeded in 165ms:
+.....                                                                    [100%]
+5 passed in 0.02s
+
+codex
+新增测试和直接相关回归测试都能通过。我再做一次全量测试验证，专门对应验收条件里的“现有测试全部通过”。
+exec
+/bin/zsh -lc 'python3 -m pytest -q' in /Users/mac/Desktop/clawCoder/AITD
+ exited 2 in 236ms:
+
+==================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_file_lock.py ___________________
+ImportError while importing test module '/Users/mac/Desktop/clawCoder/AITD/tests/test_file_lock.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/__init__.py:127: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests/test_file_lock.py:11: in <module>
+    from backend.utils import read_json_locked, write_json_locked
+E   ImportError: cannot import name 'read_json_locked' from 'backend.utils' (/Users/mac/Desktop/clawCoder/AITD/backend/utils.py)
+=========================== short test summary info ============================
+ERROR tests/test_file_lock.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.10s
+
+codex
+1. 高严重性: 当前内存缓存没有按 `config/baseUrl` 维度隔离，可能把一个环境的 `exchangeInfo` 错误复用于另一个环境。[binance.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/binance.py:44) 只维护单组 `_exchange_info_cache/_exchange_info_expires_at_ms`，而 `_exchange_info()` 每次实际请求的 URL 又来自 `resolved_base_url(config)`。[binance.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/binance.py:290) 项目里的 gateway 还是进程级单例，[__init__.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/__init__.py:7) 同一个 `BinanceGateway` 实例会服务不同调用方。结果是: 先用 `https://testnet...` 调一次，再用主网配置调，6 小时内会直接返回前一次缓存，不再调用 `cached_get_json`。这不满足“功能正确”验收，且现有测试没有覆盖这个场景。
+
+2. 中严重性: “现有测试全部通过”这一条当前不能验收通过。新增测试和相关回归测试是通过的，但全量执行 `python3 -m pytest -q` 时报错，失败点是 [tests/test_file_lock.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_file_lock.py:11) 导入 `backend.utils.read_json_locked` 失败。即使这大概率不是本子任务引入的，也意味着该验收条件在当前工作区状态下未满足。
+
+3. 中严重性: 测试没有真正验证 “TTL 为 6 小时，与文件缓存策略一致”。现有测试只验证了“命中缓存不重复调用”和“手动把过期时间设为 0 后会刷新”，见 [test_binance_exchange_info_cache.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_binance_exchange_info_cache.py:11) 与 [test_binance_exchange_info_cache.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_binance_exchange_info_cache.py:31)。但没有断言 TTL 值确实等于 `6 * 60 * 60 * 1000`，也没有验证它与 `cached_get_json(... ttl_seconds=6*60*60 ...)` 保持一致；这使得后续改坏 TTL 时测试未必能拦住。
+
+**总体评价**
+
+评分: 74/100
+
+这版实现完成了最核心的“实例内热缓存 + 锁内串行化”，同配置下的重复调用和并发穿透问题基本解决，代码也比较直接。但存在一个实质性正确性问题: 缓存粒度过粗，可能跨 `baseUrl` 复用错误数据。再加上全量测试当前未通过、TTL 一致性缺少精确测试，按你给的标准还不能算达标。
+
+**验收条件核对**
+
+- `_exchange_info` 在缓存有效期内不重复调用 `cached_get_json)`：部分满足。同一实例、同一配置下成立。
+- 缓存失效后自动重新获取数据：满足，已有测试覆盖。
+- 缓存 TTL 为 6 小时，与现有文件缓存策略一致：实现看起来是 6 小时，但测试未充分证明。
+- 多线程/并发场景下缓存访问安全：同配置并发场景满足，已有 10 线程测试。
+- 现有测试全部通过：不满足，当前全量 `pytest` 在收集阶段失败。
+
+**已验证**
+
+- `python3 -m pytest -q tests/test_binance_exchange_info_cache.py`：`5 passed`
+- `python3 -m pytest -q tests/test_binance_closed_trades.py tests/test_exchange_gateway_base.py`：`15 passed`
+- `python3 -m pytest -q`：失败，`tests/test_file_lock.py` 导入错误
+
+**建议**
+
+- 将 `_exchange_info` 内存缓存改为按 `resolved_base_url(config)` 分桶，至少做到 `cache[url] = {payload, expires_at_ms, lock?}`。
+- 新增一个测试: 同一 `BinanceGateway` 实例先后传入两个不同 `baseUrl`，应触发两次 `cached_get_json`，且返回各自数据。
+- 新增一个测试: 断言 `_exchange_info_expires_at_ms - now_ms` 约等于 `6 * 60 * 60 * 1000`，并校验 `cached_get_json` 的 `ttl_seconds` 也是 6 小时。
+tokens used
+48,587
+1. 高严重性: 当前内存缓存没有按 `config/baseUrl` 维度隔离，可能把一个环境的 `exchangeInfo` 错误复用于另一个环境。[binance.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/binance.py:44) 只维护单组 `_exchange_info_cache/_exchange_info_expires_at_ms`，而 `_exchange_info()` 每次实际请求的 URL 又来自 `resolved_base_url(config)`。[binance.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/binance.py:290) 项目里的 gateway 还是进程级单例，[__init__.py](/Users/mac/Desktop/clawCoder/AITD/backend/exchanges/__init__.py:7) 同一个 `BinanceGateway` 实例会服务不同调用方。结果是: 先用 `https://testnet...` 调一次，再用主网配置调，6 小时内会直接返回前一次缓存，不再调用 `cached_get_json`。这不满足“功能正确”验收，且现有测试没有覆盖这个场景。
+
+2. 中严重性: “现有测试全部通过”这一条当前不能验收通过。新增测试和相关回归测试是通过的，但全量执行 `python3 -m pytest -q` 时报错，失败点是 [tests/test_file_lock.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_file_lock.py:11) 导入 `backend.utils.read_json_locked` 失败。即使这大概率不是本子任务引入的，也意味着该验收条件在当前工作区状态下未满足。
+
+3. 中严重性: 测试没有真正验证 “TTL 为 6 小时，与文件缓存策略一致”。现有测试只验证了“命中缓存不重复调用”和“手动把过期时间设为 0 后会刷新”，见 [test_binance_exchange_info_cache.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_binance_exchange_info_cache.py:11) 与 [test_binance_exchange_info_cache.py](/Users/mac/Desktop/clawCoder/AITD/tests/test_binance_exchange_info_cache.py:31)。但没有断言 TTL 值确实等于 `6 * 60 * 60 * 1000`，也没有验证它与 `cached_get_json(... ttl_seconds=6*60*60 ...)` 保持一致；这使得后续改坏 TTL 时测试未必能拦住。
+
+**总体评价**
+
+评分: 74/100
+
+这版实现完成了最核心的“实例内热缓存 + 锁内串行化”，同配置下的重复调用和并发穿透问题基本解决，代码也比较直接。但存在一个实质性正确性问题: 缓存粒度过粗，可能跨 `baseUrl` 复用错误数据。再加上全量测试当前未通过、TTL 一致性缺少精确测试，按你给的标准还不能算达标。
+
+**验收条件核对**
+
+- `_exchange_info` 在缓存有效期内不重复调用 `cached_get_json)`：部分满足。同一实例、同一配置下成立。
+- 缓存失效后自动重新获取数据：满足，已有测试覆盖。
+- 缓存 TTL 为 6 小时，与现有文件缓存策略一致：实现看起来是 6 小时，但测试未充分证明。
+- 多线程/并发场景下缓存访问安全：同配置并发场景满足，已有 10 线程测试。
+- 现有测试全部通过：不满足，当前全量 `pytest` 在收集阶段失败。
+
+**已验证**
+
+- `python3 -m pytest -q tests/test_binance_exchange_info_cache.py`：`5 passed`
+- `python3 -m pytest -q tests/test_binance_closed_trades.py tests/test_exchange_gateway_base.py`：`15 passed`
+- `python3 -m pytest -q`：失败，`tests/test_file_lock.py` 导入错误
+
+**建议**
+
+- 将 `_exchange_info` 内存缓存改为按 `resolved_base_url(config)` 分桶，至少做到 `cache[url] = {payload, expires_at_ms, lock?}`。
+- 新增一个测试: 同一 `BinanceGateway` 实例先后传入两个不同 `baseUrl`，应触发两次 `cached_get_json`，且返回各自数据。
+- 新增一个测试: 断言 `_exchange_info_expires_at_ms - now_ms` 约等于 `6 * 60 * 60 * 1000`，并校验 `cached_get_json` 的 `ttl_seconds` 也是 6 小时。

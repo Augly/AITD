@@ -1,0 +1,26 @@
+Implementation is complete. Here's a summary of the changes:
+
+## Changes Made
+
+**File**: `backend/exchanges/binance.py`
+
+1. **Added `_symbol_index` instance variable** (line 50): A `dict[str, dict[str, Any]]` that maps normalized symbol names to their exchange info entries for O(1) lookup.
+
+2. **Build index on cache refresh** (lines 315-319): When `_exchange_info` fetches fresh data from the API, it now builds the `_symbol_index` dictionary using a dict comprehension with normalized symbol keys.
+
+3. **O(1) `_symbol_info` lookup** (lines 322-333): `_symbol_info` now:
+   - First checks the `_symbol_index` under the lock (O(1))
+   - Only calls `_exchange_info` if the symbol is not in the index
+   - Checks the index again after `_exchange_info` returns (in case cache was refreshed)
+
+**Tests added** to `tests/test_binance_exchange_info_cache.py`:
+- `test_symbol_info_uses_o1_index_lookup` — Verifies multiple symbol lookups only trigger one API call
+- `test_symbol_info_index_is_built_on_cache_refresh` — Verifies index is rebuilt when cache expires
+- `test_symbol_info_raises_for_unknown_symbol` — Verifies proper error for missing symbols
+- `test_symbol_index_skips_invalid_entries` — Verifies robust handling of malformed API responses
+
+## Learnings
+
+- **Pattern**: The codebase already uses instance-level caching with `threading.Lock()` for `_exchange_info_cache`. Following the same pattern for `_symbol_index` maintains consistency and thread safety.
+- **Pattern**: The cache is scoped by full URL (including `baseUrl`), which prevents testnet/prod cache collisions — this is documented in `CLAUDE.md` and must be preserved.
+- **Edge case**: The index build must filter out invalid entries (non-dict items, missing/empty symbols) to avoid `KeyError` or `AttributeError` during lookup.

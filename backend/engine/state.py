@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import time
 from copy import deepcopy
 from typing import Any
 
@@ -69,7 +71,7 @@ def normalize_position(position: dict[str, Any]) -> dict[str, Any]:
     entry_price = num(position.get("entryPrice")) or 0
     notional = num(position.get("notionalUsd")) or quantity * entry_price
     return {
-        "id": str(position.get("id") or f"{symbol}-{int(__import__('time').time() * 1000)}"),
+        "id": str(position.get("id") or f"{symbol}-{int(time.time() * 1000)}"),
         "symbol": symbol,
         "baseAsset": str(position.get("baseAsset") or base_asset_for_symbol(symbol, exchange_id)),
         "side": side,
@@ -97,7 +99,7 @@ def normalize_trade(trade: dict[str, Any]) -> dict[str, Any]:
     symbol = str(trade.get("symbol") or "").upper()
     exchange_id = str(trade.get("source") or "binance").strip().lower() or "binance"
     return {
-        "id": str(trade.get("id") or f"trade-{int(__import__('time').time() * 1000)}"),
+        "id": str(trade.get("id") or f"trade-{int(time.time() * 1000)}"),
         "positionId": trade.get("positionId"),
         "symbol": symbol,
         "baseAsset": str(trade.get("baseAsset") or base_asset_for_symbol(symbol, exchange_id)),
@@ -118,7 +120,7 @@ def normalize_exchange_closed_trade(trade: dict[str, Any]) -> dict[str, Any]:
     symbol = str(trade.get("symbol") or "").upper()
     exchange_id = str(trade.get("source") or "binance").strip().lower() or "binance"
     return {
-        "id": str(trade.get("id") or f"exchange-close-{int(__import__('time').time() * 1000)}"),
+        "id": str(trade.get("id") or f"exchange-close-{int(time.time() * 1000)}"),
         "symbol": symbol,
         "baseAsset": str(trade.get("baseAsset") or base_asset_for_symbol(symbol, exchange_id)),
         "realizedPnl": num(trade.get("realizedPnl")) or 0,
@@ -133,7 +135,7 @@ def normalize_order(order: dict[str, Any]) -> dict[str, Any]:
     symbol = str(order.get("symbol") or "").upper()
     exchange_id = str(order.get("source") or "binance").strip().lower() or "binance"
     return {
-        "id": str(order.get("id") or f"order-{int(__import__('time').time() * 1000)}"),
+        "id": str(order.get("id") or f"order-{int(time.time() * 1000)}"),
         "symbol": symbol,
         "baseAsset": str(order.get("baseAsset") or base_asset_for_symbol(symbol, exchange_id)),
         "side": str(order.get("side") or "").upper(),
@@ -176,7 +178,7 @@ def derive_session_started_at(book: dict[str, Any]) -> str | None:
     parsed: list[tuple[float, str]] = []
     for value in candidates:
         try:
-            dt = __import__("datetime").datetime.fromisoformat(value.replace("Z", "+00:00"))
+            dt = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
         except Exception:
             continue
         parsed.append((dt.timestamp(), value))
@@ -188,7 +190,7 @@ def derive_session_started_at(book: dict[str, Any]) -> str | None:
 
 def normalize_decision(decision: dict[str, Any]) -> dict[str, Any]:
     return {
-        "id": str(decision.get("id") or f"decision-{int(__import__('time').time() * 1000)}"),
+        "id": str(decision.get("id") or f"decision-{int(time.time() * 1000)}"),
         "startedAt": decision.get("startedAt") or now_iso(),
         "finishedAt": decision.get("finishedAt") or now_iso(),
         "runnerReason": decision.get("runnerReason") or "manual",

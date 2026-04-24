@@ -7,3 +7,5 @@
 2026-04-24T19:51:52+08:00	38	P0: OKX fetch_klines limit parameter bug	completed	3	false	95	95	feature/issue-38	
 2026-04-24T20:35:07+08:00	42	P2: Remove deprecated datetime.utcnow() API	completed	3	false	100	100	feature/issue-42	
 2026-04-24T21:17:40+08:00	40	P1: HTTP connection pool - urllib.request creates new TCP per request	completed	3	false	98	98	feature/issue-40	
+2026-04-24T23:14:17+08:00	43	P2: Replace __import__ with top-level imports	blocked	3	false	10	10	feature/issue-43	
+2026-04-25T00:20:02+08:00	41	P1: _exchange_info full load on every normalize call	completed	3	false	93	93	feature/issue-41	

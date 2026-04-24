@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -11,6 +13,9 @@ from ..http_client import HttpRequestError, cached_get_json, request_json
 from ..utils import clamp, now_iso, num, parse_klines
 from .base import ExchangeGateway
 from .catalog import exchange_config
+
+EXCHANGE_INFO_TTL_SECONDS = 6 * 60 * 60
+EXCHANGE_INFO_TTL_MS = EXCHANGE_INFO_TTL_SECONDS * 1000
 
 
 class BinanceGateway(ExchangeGateway):
@@ -40,6 +45,9 @@ class BinanceGateway(ExchangeGateway):
             network_settings_provider=network_settings_provider,
         )
         self._server_time_offset_ms = 0
+        self._exchange_info_cache: dict[str, dict[str, Any]] = {}
+        self._exchange_info_lock = threading.Lock()
+        self._symbol_index: dict[str, dict[str, dict[str, Any]]] = {}
 
     @staticmethod
     def _exchange_margin_type(value: Any) -> str:
@@ -75,7 +83,7 @@ class BinanceGateway(ExchangeGateway):
             payload = self._public_get_json(
                 "/fapi/v1/exchangeInfo",
                 namespace="exchange_info",
-                ttl_seconds=6 * 60 * 60,
+                ttl_seconds=EXCHANGE_INFO_TTL_SECONDS,
                 max_stale_seconds=7 * 24 * 60 * 60,
             )
             symbols = payload.get("symbols") if isinstance(payload, dict) else []
@@ -284,23 +292,51 @@ class BinanceGateway(ExchangeGateway):
             raise HttpRequestError(f"{error} [endpoint {method.upper()} {endpoint}]") from error
 
     def _exchange_info(self, config: dict[str, Any]) -> dict[str, Any]:
+        now_ms = int(time.time() * 1000)
         url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
-        payload = cached_get_json(
-            url,
-            namespace="binance_live_exchange_info",
-            ttl_seconds=6 * 60 * 60,
-            max_stale_seconds=7 * 24 * 60 * 60,
-            timeout_seconds=45,
-            network_settings=self._get_network_settings(),
-        )
-        return payload if isinstance(payload, dict) else {}
+        with self._exchange_info_lock:
+            cached_entry = self._exchange_info_cache.get(url)
+            if cached_entry is not None and cached_entry.get("expires_at_ms", 0) > now_ms:
+                cached_payload = cached_entry.get("payload")
+                return cached_payload if isinstance(cached_payload, dict) else {}
+            payload = cached_get_json(
+                url,
+                namespace="binance_live_exchange_info",
+                ttl_seconds=EXCHANGE_INFO_TTL_SECONDS,
+                max_stale_seconds=7 * 24 * 60 * 60,
+                timeout_seconds=45,
+                network_settings=self._get_network_settings(),
+            )
+            result = payload if isinstance(payload, dict) else {}
+            self._exchange_info_cache[url] = {
+                "payload": result,
+                "expires_at_ms": now_ms + EXCHANGE_INFO_TTL_MS,
+            }
+            self._symbol_index[url] = {
+                self.normalize_symbol(item.get("symbol")): item
+                for item in result.get("symbols", [])
+                if isinstance(item, dict) and item.get("symbol")
+            }
+            return result
 
     def _symbol_info(self, config: dict[str, Any], symbol: str) -> dict[str, Any]:
         normalized = self.normalize_symbol(symbol)
-        info = self._exchange_info(config)
-        for item in info.get("symbols", []):
-            if self.normalize_symbol(item.get("symbol")) == normalized:
-                return item
+        url = f"{self.resolved_base_url(config).rstrip('/')}/fapi/v1/exchangeInfo"
+        now_ms = int(time.time() * 1000)
+        with self._exchange_info_lock:
+            cached_entry = self._exchange_info_cache.get(url)
+            symbol_index = self._symbol_index.get(url, {})
+            if cached_entry is not None and cached_entry.get("expires_at_ms", 0) > now_ms:
+                info = symbol_index.get(normalized)
+                if info is not None:
+                    return info
+                raise ValueError(f"{self.display_name} symbol not found: {normalized}")
+
+        self._exchange_info(config)
+        with self._exchange_info_lock:
+            info = self._symbol_index.get(url, {}).get(normalized)
+            if info is not None:
+                return info
         raise ValueError(f"{self.display_name} symbol not found: {normalized}")
 
     def _step_precision(self, step_size: str | float | int | None) -> int:
