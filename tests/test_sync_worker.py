@@ -20,3 +20,23 @@ def test_sync_worker_incremental():
     worker = SyncWorker(session_factory=None)
     # Testing that it correctly sets up a 5 min interval schedule stub
     assert worker.interval_minutes == 5
+
+from unittest.mock import patch
+
+def test_sync_worker_real_fetch():
+    from backend.engine.sync_worker import SyncWorker
+    from backend.engine.db import init_db
+    from sqlalchemy import create_engine
+    
+    engine = create_engine("sqlite:///:memory:")
+    Session = init_db(engine)
+    worker = SyncWorker(session_factory=Session)
+    
+    with patch('backend.exchanges.binance.BinanceGateway.fetch_klines') as mock_fetch:
+        mock_fetch.return_value = [{"timestamp": 1, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}]
+        worker.run_incremental_sync()
+        
+    with Session() as session:
+        from backend.engine.models import KLineCache
+        assert session.query(KLineCache).count() > 0
+
