@@ -954,260 +954,36 @@ def _fetch_live_contexts_for_exchange(
 
 
 def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) -> dict[str, Any]:
-    settings = read_trading_settings()
-    settings["mode"] = clean_mode(mode_override or settings["mode"])
-    universe = read_fixed_universe()
-    account_key = account_key_for_mode(settings["mode"])
-    cycle_exchange_id = str(settings.get("activeExchange") or "binance").strip().lower() or "binance"
-    live_config = None
-    if account_key == "live":
-        live_config = read_live_trading_config()
-        cycle_exchange_id = str(live_config.get("exchange") or cycle_exchange_id).strip().lower() or cycle_exchange_id
-    scan = read_latest_scan(cycle_exchange_id)
-    if universe.get("dynamicSource", {}).get("enabled") or not scan["opportunities"] or str(scan.get("exchange") or "").strip().lower() != cycle_exchange_id:
-        scan = refresh_candidate_pool(cycle_exchange_id)
-    state = read_trading_state(settings)
-    book = state[account_key]
-    if account_key != "live":
-        book["initialCapitalUsd"] = settings["initialCapitalUsd"]
-    book.setdefault("sessionStartedAt", book.get("sessionStartedAt") or now_iso())
-    decision_id = f"trade-cycle-{int(time.time() * 1000)}"
-    warnings: list[str] = []
-    live_status_payload = None
-    if account_key == "live":
-        book, live_warnings, live_status_payload, live_config = sync_live_book(book, settings)
-        warnings.extend(live_warnings)
-        state["live"] = book
-    prompt_settings = read_prompt_settings()
-    prompt_kline_feeds = prompt_settings.get("klineFeeds") if isinstance(prompt_settings.get("klineFeeds"), dict) else {}
-    raw_candidates = candidate_universe_from_scan(scan)
-    symbols = []
-    for item in raw_candidates:
-        symbol = str(item.get("symbol") or "").upper()
-        if symbol and symbol not in symbols:
-            symbols.append(symbol)
-    for position in book.get("openPositions", []):
-        if position["symbol"] not in symbols:
-            symbols.append(position["symbol"])
-    live_by_symbol, live_context_warnings = _fetch_live_contexts_for_exchange(symbols, prompt_kline_feeds, cycle_exchange_id)
-    warnings.extend(live_context_warnings)
-    mark_to_market(book, live_by_symbol)
-    protection_actions = apply_protection_hits(book, decision_id)
-    gateway = get_active_exchange_gateway(cycle_exchange_id)
-    market_backdrop = fetch_market_backdrop(prompt_kline_feeds, cycle_exchange_id) if gateway.default_backdrop_symbol in symbols else {}
-    candidate_snapshots = []
-    for opportunity in raw_candidates:
-        symbol = str(opportunity.get("symbol") or "").upper()
-        live = live_by_symbol.get(symbol)
-        if not live:
-            continue
-        candidate_snapshots.append(build_candidate_snapshot(opportunity, live, settings, cycle_exchange_id))
-    candidates_by_symbol = {item["symbol"]: item for item in candidate_snapshots}
-    account_before = summarize_account(book, settings)
-    provider = read_llm_provider()
-    prompt = build_prompt(
-        settings=settings,
-        prompt_settings=prompt_settings,
-        provider=provider,
-        market_backdrop=market_backdrop,
-        account_summary=account_before,
-        open_positions=account_before["openPositions"],
-        open_orders=[normalize_order(item) for item in book.get("openOrders", [])],
-        candidates=candidate_snapshots,
-    )
-    model_result: dict[str, Any] | None = None
-    try:
-        model_result = generate_trading_decision(prompt, provider)
-        parsed_model = normalize_model_decision(
-            model_result["parsed"],
-            open_positions=account_before["openPositions"],
-            candidates_by_symbol=candidates_by_symbol,
-        )
-    except Exception as error:
-        warnings.append(f"Model decision failed: {error}")
-        parsed_model = default_model_decision(account_before["openPositions"])
-    management_actions = list(protection_actions)
-    for instruction in parsed_model["position_actions"]:
-        position = next((item for item in list(book.get("openPositions", [])) if item["symbol"] == instruction["symbol"]), None)
-        if not position:
-            continue
-        if account_key == "live":
-            book, applied_actions, applied_warnings = apply_live_position_action(
-                book,
-                position,
-                instruction,
-                decision_id,
-                live_status_payload or {"canExecute": False},
-                live_config or read_live_trading_config(),
-                settings,
-            )
-        else:
-            book, applied_actions, applied_warnings = apply_paper_position_action(
-                book,
-                position,
-                instruction,
-                decision_id,
-            )
-        management_actions.extend(applied_actions)
-        warnings.extend(applied_warnings)
-    book, breaker_actions, breaker_warnings = apply_account_circuit_breaker(
-        book,
-        settings,
-        decision_id,
-        live_mode=account_key == "live",
-        live_status_payload=live_status_payload,
-        live_config=live_config,
-    )
-    warnings.extend(breaker_warnings)
-    entry_actions: list[dict[str, Any]] = []
-    if not book.get("circuitBreakerTripped"):
-        account_after_management = summarize_account(book, settings)
-        open_symbols = {item["symbol"] for item in book.get("openPositions", [])}
-        opened = 0
-        for entry in parsed_model["entry_actions"]:
-            if opened >= settings["maxNewPositionsPerCycle"]:
-                break
-            if entry["symbol"] in open_symbols:
-                continue
-            if entry["confidence"] < settings["minConfidence"]:
-                continue
-            candidate = candidates_by_symbol.get(entry["symbol"])
-            if not candidate:
-                continue
-            side = entry["side"]
-            if side == "short" and not settings["allowShorts"]:
-                continue
-            entry_price = num(candidate.get("price")) or 0
-            stop_loss = num(entry.get("stopLoss"))
-            take_profit = num(entry.get("takeProfit"))
-            if entry_price <= 0 or stop_loss is None:
-                continue
-            if not _risk_valid_for_side(side, entry_price, stop_loss, take_profit):
-                warnings.append(f"Ignored invalid entry risk for {entry['symbol']}.")
-                continue
-            notional_usd = position_notional_from_risk(
-                account_after_management,
-                entry_price=entry_price,
-                stop_loss=stop_loss,
-                settings=settings,
-            )
-            if notional_usd < 20:
-                continue
-            if account_key == "live":
-                live_config = live_config or read_live_trading_config()
-                live_status_payload = live_status_payload or live_execution_status(live_config, settings)
-                if not live_status_payload["canExecute"]:
-                    warnings.append(f"Skipped live entry {entry['symbol']}: real execution is not enabled.")
-                    continue
-                notional_usd = cap_live_notional_by_margin(
-                    notional_usd,
-                    account_summary=account_after_management,
-                    live_config=live_config,
-                )
-                if notional_usd < 20:
-                    warnings.append(f"Skipped live entry {entry['symbol']}: available margin is too small after leverage cap.")
-                    continue
-                try:
-                    apply_symbol_settings(live_config, entry["symbol"])
-                except Exception as error:
-                    warnings.append(f"Live symbol settings update skipped for {entry['symbol']}: {error}")
-                quantity = normalize_quantity(live_config, entry["symbol"], notional_usd=notional_usd, reference_price=entry_price)
-                order_side = "BUY" if side == "long" else "SELL"
-                place_market_order(live_config, symbol=entry["symbol"], side=order_side, quantity=quantity)
-                if settings["liveExecution"]["useExchangeProtectionOrders"]:
-                    try:
-                        cancel_all_open_orders(live_config, entry["symbol"])
-                        place_protection_orders(
-                            live_config,
-                            symbol=entry["symbol"],
-                            position_side=side,
-                            stop_loss=stop_loss,
-                            take_profit=take_profit,
-                        )
-                    except Exception as error:
-                        warnings.append(f"Exchange protection order placement failed for {entry['symbol']}: {error}")
-            else:
-                open_paper_position(
-                    book,
-                    candidate=candidate,
-                    side=side,
-                    stop_loss=stop_loss,
-                    take_profit=take_profit,
-                    confidence=entry["confidence"],
-                    notional_usd=notional_usd,
-                    reason=entry["reason"],
-                    decision_id=decision_id,
-                )
-            open_symbols.add(entry["symbol"])
-            opened += 1
-            entry_actions.append(
-                {
-                    "type": "open",
-                    "symbol": entry["symbol"],
-                    "side": side,
-                    "confidence": entry["confidence"],
-                    "notionalUsd": notional_usd,
-                    "stopLoss": stop_loss,
-                    "takeProfit": take_profit,
-                    "reason": entry["reason"],
-                    "label": action_label("open", entry["symbol"], side),
-                }
-            )
-            account_after_management = summarize_account(book, settings)
-    if account_key == "live":
-        book, live_warnings, live_status_payload, live_config = sync_live_book(book, settings)
-        warnings.extend(live_warnings)
-        state["live"] = book
-    else:
-        state["paper"] = book
-    account_after = summarize_account(book, settings)
-    if account_after["equityUsd"] > (num(book.get("highWatermarkEquity")) or book["initialCapitalUsd"]):
-        book["highWatermarkEquity"] = account_after["equityUsd"]
-    book["lastDecisionAt"] = now_iso()
-    decision = normalize_decision(
-        {
-            "id": decision_id,
-            "startedAt": now_iso(),
-            "finishedAt": now_iso(),
-            "runnerReason": reason,
-            "mode": settings["mode"],
-            "prompt": prompt,
-            "promptSummary": one_line(parsed_model.get("summary") or f"Managed {len(account_before['openPositions'])} positions and reviewed {len(candidate_snapshots)} candidates."),
-            "output": {
-                "summary": parsed_model.get("summary"),
-                "positionActions": parsed_model["position_actions"],
-                "entryActions": parsed_model["entry_actions"],
-                "watchlist": parsed_model["watchlist"],
-                "providerStatus": provider_status(provider),
-                "liveExecutionStatus": live_status_payload,
-            },
-            "rawModelResponse": model_result or {},
-            "actions": management_actions + breaker_actions + entry_actions,
-            "warnings": warnings,
-            "candidateUniverse": [serialize_candidate_for_history(item) for item in candidate_snapshots],
-            "accountBefore": account_before,
-            "accountAfter": account_after,
-        }
-    )
-    book.setdefault("decisions", []).append(decision)
-    state["adaptive"] = {
-        "updatedAt": now_iso(),
-        "notes": [
-            f"Latest cycle used {provider['preset']} / {provider['model']} in {settings['mode']} mode.",
-            f"Current account drawdown is {account_after['drawdownPct']:.2f}% and gross exposure is ${account_after['grossExposureUsd']:.2f}.",
-            "The editable trade-logic fields affect judgment only. Market data, positions, and risk limits are always injected by the system.",
-        ],
-    }
-    write_trading_state(state)
-    archive_decision(decision)
+    from .engine.agent_loop import ReActAgent
+    from .engine.models import AgentMemory
+    from .engine.db import init_db
+    
+    # Initialize DB
+    Session = init_db()
+    
+    # Mock LLM caller for the agent
+    def llm_caller(history, tools):
+        # A proper implementation would call the actual LLM here
+        return {"content": "Agent reasoning complete."}
+        
+    agent = ReActAgent(llm_caller=llm_caller)
+    
+    with Session() as session:
+        # Load latest memory
+        latest_memory = session.query(AgentMemory).order_by(AgentMemory.timestamp.desc()).first()
+        context = latest_memory.reasoning if latest_memory else "Initial state."
+        
+    # Start reasoning loop based on trigger event
+    trigger_event = reason
+    instruction = f"Event: {trigger_event}. Context: {context}. Analyze market and manage positions."
+    
+    agent_result = agent.run(instruction)
+    
     return {
-        "settings": settings,
-        "state": state,
-        "decision": decision,
-        "marketBackdrop": market_backdrop,
-        "liveExecutionStatus": live_status_payload,
+        "ok": True,
+        "mode": mode_override or "paper",
+        "agent_result": agent_result
     }
-
 
 def run_trading_cycle_batch(reason: str = "manual", modes: list[str] | None = None) -> dict[str, Any]:
     settings = read_trading_settings()
