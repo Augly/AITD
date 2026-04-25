@@ -5,7 +5,8 @@ class AnthropicClient:
     def __init__(self, api_key):
         self.api_key = api_key
         
-    def call(self, messages, tools):
+    def call(self, messages, tools, retries=3):
+        import time
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", method="POST")
         req.add_header("x-api-key", self.api_key)
         req.add_header("anthropic-version", "2023-06-01")
@@ -15,23 +16,28 @@ class AnthropicClient:
             "model": "claude-3-5-sonnet-20240620",
             "max_tokens": 1024,
             "messages": messages,
+            "tools": tools
         }
-        if tools:
-            data["tools"] = tools
         
-        with urllib.request.urlopen(req, data=json.dumps(data).encode('utf-8')) as response:
-            resp_data = json.loads(response.read().decode('utf-8'))
-            
-        result = {"text": "", "tool_calls": []}
-        for block in resp_data.get("content", []):
-            if block["type"] == "text":
-                result["text"] += block["text"]
-            elif block["type"] == "tool_use":
-                result["tool_calls"].append({
-                    "name": block["name"],
-                    "arguments": block["input"]
-                })
-        return result
+        for attempt in range(retries):
+            try:
+                with urllib.request.urlopen(req, data=json.dumps(data).encode('utf-8'), timeout=30) as response:
+                    resp_data = json.loads(response.read().decode('utf-8'))
+                    
+                result = {"text": "", "tool_calls": []}
+                for block in resp_data.get("content", []):
+                    if block["type"] == "text":
+                        result["text"] += block["text"]
+                    elif block["type"] == "tool_use":
+                        result["tool_calls"].append({
+                            "name": block["name"],
+                            "arguments": block["input"]
+                        })
+                return result
+            except Exception as e:
+                if attempt == retries - 1:
+                    raise e
+                time.sleep(2 ** attempt)
 
 class OpenAIClient:
     def __init__(self, api_key):
