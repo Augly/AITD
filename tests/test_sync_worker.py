@@ -14,3 +14,9 @@ def test_sync_worker_adds_klines():
         kline = session.query(KLineCache).first()
         assert kline.symbol == "BTCUSDT"
         assert kline.close == 2.0
+
+def test_sync_worker_incremental():
+    from backend.engine.sync_worker import SyncWorker
+    worker = SyncWorker(session_factory=None)
+    # Testing that it correctly sets up a 5 min interval schedule stub
+    assert worker.interval_minutes == 5

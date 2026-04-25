@@ -1,8 +1,13 @@
 from backend.engine.models import KLineCache
 
 class SyncWorker:
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, interval_minutes=5):
         self.Session = session_factory
+        self.interval_minutes = interval_minutes
+
+    def run_incremental_sync(self):
+        # Stub for the actual 5-minute loop
+        pass
 
     def sync_klines(self, symbol: str, interval: str, klines: list):
         with self.Session() as session:
