@@ -381,10 +381,11 @@ CURRENT ACCOUNT SNAPSHOT:
 
 INSTRUCTIONS:
 1. You have a set of tools available. You MUST use them to gather information.
-2. If you want to analyze a symbol, use the `get_klines` tool to fetch its historical data.
-3. If you want to review your past mistakes or successes, use `get_recent_decisions`.
-4. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
-5. Think step-by-step before calling a tool.
+2. If you want to analyze a symbol's raw data, use the `get_kline_data` tool.
+3. CRITICAL: If you want to use classical trading strategies (MACD, RSI) or Chanlun (缠论 - Chaos Theory/Fractals), use the `analyze_market_technicals` tool. It provides ready-to-use indicator values and fractal analysis.
+4. If you want to review your past mistakes or successes, use `get_recent_decisions`.
+5. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
+6. Think step-by-step before calling a tool.
 """
     return system_instruction
 
@@ -945,7 +946,7 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                     "qty": {"type": "number", "description": "Amount to trade"}
                 }
                 schema["input_schema"]["required"] = ["symbol", "side", "qty"]
-            elif tool_name in ["get_kline_data", "get_position", "close_position"]:
+            elif tool_name in ["get_kline_data", "get_position", "close_position", "analyze_market_technicals"]:
                 schema["input_schema"]["properties"] = {
                     "symbol": {"type": "string", "description": "e.g. BTCUSDT"}
                 }

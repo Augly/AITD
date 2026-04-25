@@ -25,7 +25,17 @@ def get_recent_decisions(limit: int, session_factory):
 def get_kline_data(symbol: str, interval: str, session_factory, limit=100):
     with session_factory() as session:
         klines = session.query(KLineCache).filter_by(symbol=symbol, interval=interval).order_by(KLineCache.timestamp.desc()).limit(limit).all()
-        return [{"timestamp": k.timestamp, "close": k.close} for k in reversed(klines)]
+        return [{"timestamp": k.timestamp, "close": k.close, "high": k.high, "low": k.low} for k in reversed(klines)]
+
+def analyze_market_technicals(symbol: str, interval: str, session_factory):
+    """
+    Returns a comprehensive technical analysis including MACD, RSI, and Chanlun (缠论) fractals.
+    """
+    from backend.engine.indicators import get_technical_summary
+    klines = get_kline_data(symbol, interval, session_factory, limit=100)
+    if not klines:
+        return {"error": f"No kline data found for {symbol} at {interval}."}
+    return get_technical_summary(klines)
 
 def get_account_balance(mode: str = "paper"):
     from backend.engine.state import read_trading_state
