@@ -47,3 +47,30 @@ def test_anthropic_real_call(mock_urlopen):
     res = client.call([{"role": "user", "content": "test"}], [])
     assert res["text"] == "Thinking..."
     assert res["tool_calls"][0]["name"] == "pass_turn"
+
+@patch('urllib.request.urlopen')
+def test_openai_real_call(mock_urlopen):
+    from backend.engine.llm_client import OpenAIClient
+    class MockResponse:
+        def read(self):
+            return json.dumps({
+                "choices": [{
+                    "message": {
+                        "content": "Thinking...",
+                        "tool_calls": [{
+                            "function": {"name": "place_order", "arguments": "{\"symbol\":\"BTCUSDT\",\"side\":\"BUY\",\"qty\":1.0}"}
+                        }]
+                    }
+                }]
+            }).encode('utf-8')
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+    mock_urlopen.return_value = MockResponse()
+    
+    client = OpenAIClient("fake_key")
+    res = client.call([{"role": "user", "content": "test"}], [])
+    assert res["text"] == "Thinking..."
+    assert res["tool_calls"][0]["name"] == "place_order"
+    assert res["tool_calls"][0]["arguments"]["side"] == "BUY"
