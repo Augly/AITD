@@ -22,3 +22,21 @@ class AgentMemory(Base):
     timestamp = Column(Integer)
     reasoning = Column(String)
     decision = Column(JSON)
+
+class Decision(Base):
+    __tablename__ = 'decision'
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(Integer, index=True)
+    symbol = Column(String, index=True)
+    action = Column(String)
+    reasoning = Column(String)
+
+class Trade(Base):
+    __tablename__ = 'trade'
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(Integer, index=True)
+    symbol = Column(String, index=True)
+    side = Column(String)
+    quantity = Column(Float)
+    price = Column(Float)
+    pnl = Column(Float, default=0.0)
