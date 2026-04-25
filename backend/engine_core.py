@@ -928,17 +928,36 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     llm_client = LLMClientFactory.create(preset, api_key)
     
     def llm_caller(history, tools):
-        # We need to map our simple python tools to the Anthropic/OpenAI schema
         tool_schemas = []
         for tool_name in tools.keys():
-            tool_schemas.append({
+            schema = {
                 "name": tool_name,
                 "description": f"Call {tool_name}",
                 "input_schema": {
                     "type": "object",
-                    "properties": {} # Simplified for now, the agent will pass empty dicts if needed
+                    "properties": {}
                 }
-            })
+            }
+            if tool_name == "place_order":
+                schema["input_schema"]["properties"] = {
+                    "symbol": {"type": "string", "description": "e.g. BTCUSDT"},
+                    "side": {"type": "string", "description": "BUY or SELL"},
+                    "qty": {"type": "number", "description": "Amount to trade"}
+                }
+                schema["input_schema"]["required"] = ["symbol", "side", "qty"]
+            elif tool_name in ["get_kline_data", "get_position", "close_position"]:
+                schema["input_schema"]["properties"] = {
+                    "symbol": {"type": "string", "description": "e.g. BTCUSDT"}
+                }
+                schema["input_schema"]["required"] = ["symbol"]
+            elif tool_name == "get_recent_decisions":
+                schema["input_schema"]["properties"] = {
+                    "limit": {"type": "integer", "description": "Number of decisions to fetch"}
+                }
+                schema["input_schema"]["required"] = ["limit"]
+                
+            tool_schemas.append(schema)
+            
         return llm_client.call(history, tool_schemas)
         
     agent = ReActAgent(llm_caller=llm_caller)
@@ -1014,8 +1033,6 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                 # Execute through the robust backend which handles risk checks
                 try:
                     exec_result = backend_executor.execute_decision(symbol, side, qty)
-                    # The executor handles its own state updates (like updating positions in memory/json). 
-                    # For our new SQLite architecture, we log the trade if successful.
                     if exec_result and exec_result.get("status") == "success":
                         trade = Trade(
                             timestamp=int(time.time()),
@@ -1030,6 +1047,27 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                         decision.action = f"ORDER_{side}_{symbol}_FAILED"
                 except Exception as e:
                     decision.action = f"ORDER_{side}_{symbol}_ERROR_{str(e)}"
+            elif tc["name"] == "close_position":
+                args = tc.get("arguments", {})
+                symbol = args.get("symbol", "UNKNOWN")
+                
+                try:
+                    # In our simplified execute_decision, sending opposite side closes the position
+                    # We can fetch the current position side and send the opposite
+                    from .engine.state import read_trading_state
+                    book = read_trading_state(accounts.get(mode_override or "paper", {}))[mode_override or "paper"]
+                    pos = next((p for p in book.get("openPositions", []) if p["symbol"] == symbol), None)
+                    if pos:
+                        opposite_side = "SELL" if pos["side"].lower() == "long" else "BUY"
+                        exec_result = backend_executor.execute_decision(symbol, opposite_side, float(pos["quantity"]))
+                        if exec_result and exec_result.get("status") == "success":
+                            decision.action = f"CLOSE_{symbol}_SUCCESS"
+                        else:
+                            decision.action = f"CLOSE_{symbol}_FAILED"
+                    else:
+                        decision.action = f"CLOSE_{symbol}_NOT_FOUND"
+                except Exception as e:
+                    decision.action = f"CLOSE_{symbol}_ERROR_{str(e)}"
                 
         session.commit()
     

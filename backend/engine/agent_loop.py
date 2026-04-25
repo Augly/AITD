@@ -1,11 +1,31 @@
 import json
-from backend.engine.agent_tools import get_account_balance
+from backend.engine.agent_tools import (
+    get_account_balance,
+    get_position,
+    get_recent_decisions,
+    get_kline_data,
+    list_universe,
+    place_order,
+    close_position,
+    pass_turn
+)
+from backend.engine.db import init_db
 
 class ReActAgent:
     def __init__(self, llm_caller):
         self.llm_caller = llm_caller
+        self.Session = init_db()
+        
+        # We wrap tools that require session_factory
         self.tools = {
-            "get_account_balance": get_account_balance
+            "get_account_balance": get_account_balance,
+            "get_position": get_position,
+            "get_recent_decisions": lambda limit=5: get_recent_decisions(limit, self.Session),
+            "get_kline_data": lambda symbol, interval="15m", limit=100: get_kline_data(symbol, interval, self.Session, limit),
+            "list_universe": list_universe,
+            "place_order": place_order,
+            "close_position": close_position,
+            "pass_turn": pass_turn
         }
         self.history = []
 

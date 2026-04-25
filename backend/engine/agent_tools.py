@@ -8,8 +8,14 @@ def list_universe():
         return ["BTCUSDT", "ETHUSDT"] # Fallback
     return symbols
 
-def get_position(symbol: str):
-    return {"symbol": symbol, "qty": 0} # Kept static for paper mode simplicity
+def get_position(symbol: str, mode: str = "paper"):
+    from backend.engine.state import read_trading_state
+    state = read_trading_state()
+    book = state.get(mode, {})
+    pos = next((p for p in book.get("openPositions", []) if p["symbol"].upper() == symbol.upper()), None)
+    if pos:
+        return {"symbol": symbol, "side": pos["side"], "qty": pos["quantity"], "pnl": pos.get("unrealizedPnl", 0)}
+    return {"symbol": symbol, "qty": 0}
 
 def get_recent_decisions(limit: int, session_factory):
     with session_factory() as session:
@@ -21,9 +27,14 @@ def get_kline_data(symbol: str, interval: str, session_factory, limit=100):
         klines = session.query(KLineCache).filter_by(symbol=symbol, interval=interval).order_by(KLineCache.timestamp.desc()).limit(limit).all()
         return [{"timestamp": k.timestamp, "close": k.close} for k in reversed(klines)]
 
-def get_account_balance():
-    # Stub for account balance tool
-    return {"USDT": 10000}
+def get_account_balance(mode: str = "paper"):
+    from backend.engine.state import read_trading_state
+    state = read_trading_state()
+    book = state.get(mode, {})
+    return {
+        "equity": book.get("exchangeEquityUsd", book.get("highWatermarkEquity", 10000)),
+        "available_margin": book.get("exchangeAvailableBalanceUsd", book.get("highWatermarkEquity", 10000))
+    }
 
 def place_order(symbol: str, side: str, qty: float):
     return {"status": "success", "symbol": symbol}
