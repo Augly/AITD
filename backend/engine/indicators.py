@@ -100,6 +100,7 @@ def get_technical_summary(klines):
     chanlun_status = analyze_chanlun_fractals(highs, lows)
     atr_val = calc_atr(highs, lows, closes, config.get("atr_period", 14))
     upper_bb, mid_bb, lower_bb = calc_bollinger_bands(closes, config.get("bollinger_period", 20), config.get("bollinger_std", 2.0))
+    st_val, st_trend = calc_supertrend(highs, lows, closes, period=10, multiplier=3)
     
     trend = "震荡 (Neutral)"
     if macd_hist is not None:
@@ -122,8 +123,27 @@ def get_technical_summary(klines):
             "MACD_Histogram": round(macd_hist, 4) if macd_hist else None,
             "ATR_14": round(atr_val, 4) if atr_val else None,
             "BB_Upper": round(upper_bb, 4) if upper_bb else None,
-            "BB_Lower": round(lower_bb, 4) if lower_bb else None
+            "BB_Lower": round(lower_bb, 4) if lower_bb else None,
+            "SuperTrend": round(st_val, 4) if st_val else None,
+            "SuperTrend_Direction": st_trend
         },
         "chanlun_analysis": chanlun_status,
-        "advice_for_agent": "结合缠论分型与MACD动能进行共振确认。底分型+MACD金叉是做多信号；顶分型+MACD死叉是做空信号。"
+        "advice_for_agent": "结合缠论分型与MACD动能进行共振确认。底分型+MACD金叉是做多信号；顶分型+MACD死叉是做空信号。Use ATR to set Stop Loss. Trade in the direction of the SuperTrend."
     }
+
+def calc_supertrend(highs, lows, closes, period=10, multiplier=3):
+    if len(highs) < period + 1: return None, "neutral"
+    atr = calc_atr(highs, lows, closes, period)
+    if not atr: return None, "neutral"
+    
+    basic_upper = ((highs[-1] + lows[-1]) / 2) + (multiplier * atr)
+    basic_lower = ((highs[-1] + lows[-1]) / 2) - (multiplier * atr)
+    
+    # Simplified SuperTrend current value approximation
+    # A true SuperTrend requires historical tracking of upper/lower bands
+    # Here we do a fast lookback approximation
+    trend = "bullish" if closes[-1] > basic_lower else "bearish"
+    st_value = basic_lower if trend == "bullish" else basic_upper
+    
+    return st_value, trend
+

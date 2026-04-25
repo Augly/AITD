@@ -63,6 +63,45 @@ def close_position(symbol: str):
 def pass_turn():
     return {"status": "passed"}
 
+def calculate_kelly_position_size(account_equity: float, win_rate: float, reward_risk_ratio: float, entry_price: float, stop_loss: float, kelly_fraction: float = 0.5) -> dict:
+    """
+    Calculates position size using Fractional Kelly Criterion.
+    win_rate: 0.0 to 1.0 (e.g. 0.55 for 55%)
+    reward_risk_ratio: expected profit / expected loss (e.g. 2.0 for 2R)
+    kelly_fraction: typically 0.5 (Half Kelly) for safer growth
+    """
+    if entry_price <= 0 or stop_loss <= 0 or account_equity <= 0:
+        return {"error": "Invalid prices or equity."}
+    if win_rate <= 0 or win_rate >= 1:
+        return {"error": "Win rate must be between 0 and 1."}
+    if reward_risk_ratio <= 0:
+        return {"error": "Reward/Risk ratio must be positive."}
+        
+    # Kelly Formula: K = W - ((1 - W) / R)
+    kelly_pct = win_rate - ((1 - win_rate) / reward_risk_ratio)
+    
+    if kelly_pct <= 0:
+        return {"error": "Kelly percentage is negative. Do not take this trade (negative edge)."}
+        
+    adjusted_kelly_pct = kelly_pct * kelly_fraction
+    risk_amount = account_equity * adjusted_kelly_pct
+    
+    price_risk_per_unit = abs(entry_price - stop_loss)
+    if price_risk_per_unit == 0:
+        return {"error": "Entry price and stop loss cannot be identical."}
+        
+    qty = risk_amount / price_risk_per_unit
+    notional = qty * entry_price
+    leverage_required = notional / account_equity
+    
+    return {
+        "suggested_quantity": round(qty, 6),
+        "kelly_pct_used": round(adjusted_kelly_pct * 100, 2),
+        "risk_amount_usd": round(risk_amount, 2),
+        "notional_size_usd": round(notional, 2),
+        "leverage_required": round(leverage_required, 2)
+    }
+
 def calculate_position_size(account_equity: float, risk_pct: float, entry_price: float, stop_loss: float) -> dict:
     """
     Calculates the exact quantity to trade based on a fixed fractional risk model.

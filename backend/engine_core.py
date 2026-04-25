@@ -391,7 +391,7 @@ INSTRUCTIONS:
 2. If you want to analyze a symbol's raw data, use the `get_kline_data` tool.
 3. CRITICAL: If you want to use classical trading strategies (MACD, RSI), Chanlun (缠论 - Chaos Theory/Fractals), or SMC (Smart Money Concepts like FVG, VWAP, Divergence), use the `analyze_market_technicals` tool. It provides ready-to-use indicator values and fractal analysis.
 4. To get a top-down view (15m, 1h, 4h), use `analyze_multi_timeframe`.
-5. CRITICAL: Before placing an order, you MUST use `calculate_position_size` to determine the exact `qty` based on your stop loss and max {brain_cfg.get('risk_management', {}).get('risk_pct_per_trade', 2.0)}% account risk.
+5. CRITICAL: Before placing an order, you MUST use EITHER `calculate_position_size` (for fixed 2% risk) OR `calculate_kelly_position_size` (for dynamic sizing based on win rate and R/R ratio) to determine the exact `qty`.
 6. If you want to review your past mistakes or successes, use `get_recent_decisions`.
 7. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
 8. Think step-by-step before calling a tool.
@@ -968,6 +968,15 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
             elif tool_name == "analyze_multi_timeframe":
                 schema["input_schema"]["properties"] = {"symbol": {"type": "string"}}
                 schema["input_schema"]["required"] = ["symbol"]
+            elif tool_name == "calculate_kelly_position_size":
+                schema["input_schema"]["properties"] = {
+                    "account_equity": {"type": "number"},
+                    "win_rate": {"type": "number", "description": "e.g. 0.55 for 55%"},
+                    "reward_risk_ratio": {"type": "number", "description": "Expected profit / expected loss, e.g. 2.0"},
+                    "entry_price": {"type": "number"},
+                    "stop_loss": {"type": "number"},
+                    "kelly_fraction": {"type": "number", "description": "e.g. 0.5 for Half Kelly"}
+                }
             elif tool_name == "calculate_position_size":
                 schema["input_schema"]["properties"] = {
                     "account_equity": {"type": "number"},
