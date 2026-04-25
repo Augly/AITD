@@ -955,16 +955,35 @@ def _fetch_live_contexts_for_exchange(
 
 def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) -> dict[str, Any]:
     from .engine.agent_loop import ReActAgent
-    from .engine.models import AgentMemory
+    from .engine.models import AgentMemory, Decision, Trade
     from .engine.db import init_db
+    from .engine.llm_client import LLMClientFactory
+    from .config import read_llm_provider
+    import time
     
     # Initialize DB
     Session = init_db()
     
-    # Mock LLM caller for the agent
+    provider_config = read_llm_provider()
+    # provider_config usually has 'preset' (e.g. 'anthropic' or 'openai') and 'apiKey'
+    preset = provider_config.get("preset", "anthropic").lower()
+    api_key = provider_config.get("apiKey", "")
+    
+    llm_client = LLMClientFactory.create(preset, api_key)
+    
     def llm_caller(history, tools):
-        # A proper implementation would call the actual LLM here
-        return {"content": "Agent reasoning complete."}
+        # We need to map our simple python tools to the Anthropic/OpenAI schema
+        tool_schemas = []
+        for tool_name in tools.keys():
+            tool_schemas.append({
+                "name": tool_name,
+                "description": f"Call {tool_name}",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {} # Simplified for now, the agent will pass empty dicts if needed
+                }
+            })
+        return llm_client.call(history, tool_schemas)
         
     agent = ReActAgent(llm_caller=llm_caller)
     
@@ -979,10 +998,37 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     
     agent_result = agent.run(instruction)
     
+    final_text = ""
+    if isinstance(agent_result, list) and len(agent_result) > 0:
+        final_msg = agent_result[-1]
+        final_text = final_msg.get("content", "")
+        if isinstance(final_text, list): # if it's a list of blocks
+            text_blocks = [b["text"] for b in final_text if b.get("type") == "text"]
+            final_text = "\n".join(text_blocks)
+        elif isinstance(final_text, str):
+            pass
+            
+    # Naive extraction: If it decided to pass, or buy, etc.
+    action = "HOLD"
+    if "BUY" in final_text.upper() or "LONG" in final_text.upper():
+        action = "BUY"
+    elif "SELL" in final_text.upper() or "SHORT" in final_text.upper():
+        action = "SELL"
+    
+    with Session() as session:
+        decision = Decision(
+            timestamp=int(time.time()),
+            symbol="ALL", # Can be extracted more robustly later
+            action=action,
+            reasoning=final_text
+        )
+        session.add(decision)
+        session.commit()
+    
     return {
         "ok": True,
         "mode": mode_override or "paper",
-        "agent_result": agent_result
+        "agent_result": final_text
     }
 
 def run_trading_cycle_batch(reason: str = "manual", modes: list[str] | None = None) -> dict[str, Any]:
