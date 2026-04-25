@@ -24,3 +24,26 @@ def test_openai_format_translation():
     assert standardized["text"] == "Thinking..."
     assert standardized["tool_calls"][0]["name"] == "get_klines"
     assert standardized["tool_calls"][0]["arguments"]["symbol"] == "BTCUSDT"
+
+from unittest.mock import patch
+import json
+
+@patch('urllib.request.urlopen')
+def test_anthropic_real_call(mock_urlopen):
+    from backend.engine.llm_client import AnthropicClient
+    class MockResponse:
+        def read(self):
+            return json.dumps({
+                "content": [{"type": "text", "text": "Thinking..."}, {"type": "tool_use", "name": "pass_turn", "input": {}}]
+            }).encode('utf-8')
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+    mock_urlopen.return_value = MockResponse()
+    
+    client = AnthropicClient("fake_key")
+    res = client.call([{"role": "user", "content": "test"}], [])
+    assert res["text"] == "Thinking..."
+    assert res["tool_calls"][0]["name"] == "pass_turn"
