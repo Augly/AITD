@@ -805,3 +805,33 @@ def delete_prompt_preset(preset_id: str) -> dict[str, Any]:
         "deletedId": target,
         "prompts": library["prompts"],
     }
+
+import json
+from pathlib import Path
+
+BRAIN_CONFIG_PATH = Path("data/brain_config.json")
+
+def read_brain_config():
+    if BRAIN_CONFIG_PATH.exists():
+        with open(BRAIN_CONFIG_PATH, "r") as f:
+            return json.load(f)
+    return {
+        "indicators": {
+            "macd_fast": 12,
+            "macd_slow": 26,
+            "macd_signal": 9,
+            "rsi_period": 14,
+            "atr_period": 14,
+            "bollinger_period": 20,
+            "bollinger_std": 2.0,
+            "fvg_max_age": 20
+        },
+        "risk_management": {
+            "risk_pct_per_trade": 2.0
+        },
+        "trading_rules": []
+    }
+
+def write_brain_config(config):
+    with open(BRAIN_CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=4)

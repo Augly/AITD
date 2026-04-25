@@ -372,6 +372,10 @@ def build_prompt(
         
     custom_prompt = prompt_settings.get("decision_logic", "")
     
+    from .config import read_brain_config
+    brain_cfg = read_brain_config()
+    trading_rules = "\n".join([f"- {r}" for r in brain_cfg.get("trading_rules", [])])
+    
     system_instruction = f"""You are an autonomous quantitative trading AI Agent.
 Your goal is to maximize PnL while strictly managing risk.
 {custom_prompt}
@@ -379,12 +383,15 @@ Your goal is to maximize PnL while strictly managing risk.
 CURRENT ACCOUNT SNAPSHOT:
 {snapshot}
 
+TRADING RULES TO FOLLOW:
+{trading_rules}
+
 INSTRUCTIONS:
 1. You have a set of tools available. You MUST use them to gather information.
 2. If you want to analyze a symbol's raw data, use the `get_kline_data` tool.
 3. CRITICAL: If you want to use classical trading strategies (MACD, RSI), Chanlun (缠论 - Chaos Theory/Fractals), or SMC (Smart Money Concepts like FVG, VWAP, Divergence), use the `analyze_market_technicals` tool. It provides ready-to-use indicator values and fractal analysis.
 4. To get a top-down view (15m, 1h, 4h), use `analyze_multi_timeframe`.
-5. CRITICAL: Before placing an order, you MUST use `calculate_position_size` to determine the exact `qty` based on your stop loss and max 2% account risk.
+5. CRITICAL: Before placing an order, you MUST use `calculate_position_size` to determine the exact `qty` based on your stop loss and max {brain_cfg.get('risk_management', {}).get('risk_pct_per_trade', 2.0)}% account risk.
 6. If you want to review your past mistakes or successes, use `get_recent_decisions`.
 7. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
 8. Think step-by-step before calling a tool.

@@ -82,6 +82,9 @@ def calc_bollinger_bands(prices, period=20, std_dev=2):
     return upper_band, sma, lower_band
 
 def get_technical_summary(klines):
+    from backend.config import read_brain_config
+    config = read_brain_config()["indicators"]
+    
     if not klines or len(klines) < 30:
         return {"error": "Not enough kline data for technical analysis (need at least 30 periods)."}
     
@@ -92,11 +95,11 @@ def get_technical_summary(klines):
     
     current_price = closes[-1]
     
-    macd_val, macd_sig, macd_hist = calc_macd(closes)
-    rsi_val = calc_rsi(closes)
-    atr_val = calc_atr(highs, lows, closes)
-    upper_bb, mid_bb, lower_bb = calc_bollinger_bands(closes)
+    macd_val, macd_sig, macd_hist = calc_macd(closes, config.get("macd_fast", 12), config.get("macd_slow", 26), config.get("macd_signal", 9))
+    rsi_val = calc_rsi(closes, config.get("rsi_period", 14))
     chanlun_status = analyze_chanlun_fractals(highs, lows)
+    atr_val = calc_atr(highs, lows, closes, config.get("atr_period", 14))
+    upper_bb, mid_bb, lower_bb = calc_bollinger_bands(closes, config.get("bollinger_period", 20), config.get("bollinger_std", 2.0))
     
     trend = "震荡 (Neutral)"
     if macd_hist is not None:
