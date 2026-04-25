@@ -11,17 +11,26 @@ class ReActAgent:
 
     def run(self, instruction: str):
         self.history.append({"role": "user", "content": instruction})
-        for _ in range(5): # Max iterations
+        for _ in range(5):
             response = self.llm_caller(self.history, self.tools)
-            if "tool_calls" in response:
-                # LLM output also needs to be appended to history
-                # But for the minimal test passing, we just follow the instructions
-                # Actually, wait. Let's append the assistant's message as well, if we want to follow real react loop, but the plan has specific code. Let's use the plan's code.
+            # response is {"text": "...", "tool_calls": [...]}
+            
+            assistant_msg = {"role": "assistant", "content": response.get("text", "")}
+            if response.get("tool_calls"):
+                assistant_msg["tool_calls"] = response["tool_calls"]
+            self.history.append(assistant_msg)
+            
+            if response.get("tool_calls"):
                 for tool in response["tool_calls"]:
                     func = self.tools.get(tool["name"])
                     if func:
-                        result = func(**tool.get("arguments", {}))
-                        self.history.append({"role": "tool", "content": json.dumps(result)})
+                        try:
+                            # Pass session_factory if the tool requires it, but for simplicity here we assume tools are curried or don't need it if not defined
+                            # A better pattern is to inject dependencies when registering tools.
+                            result = func(**tool.get("arguments", {}))
+                        except Exception as e:
+                            result = {"error": str(e)}
+                        self.history.append({"role": "tool", "name": tool["name"], "content": json.dumps(result)})
             else:
-                return response
+                return self.history
         return self.history
