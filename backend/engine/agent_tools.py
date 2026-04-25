@@ -8,3 +8,22 @@ def get_kline_data(symbol: str, interval: str, session_factory):
 def get_account_balance():
     # Stub for account balance tool
     return {"USDT": 10000}
+
+def list_universe():
+    return ["BTCUSDT", "ETHUSDT"]
+
+def get_position(symbol: str):
+    return {"symbol": symbol, "qty": 0}
+
+def get_recent_decisions(limit: int):
+    # Stub for reading from DB
+    return []
+
+def place_order(symbol: str, side: str, qty: float):
+    return {"status": "success", "symbol": symbol}
+
+def close_position(symbol: str):
+    return {"status": "closed", "symbol": symbol}
+
+def pass_turn():
+    return {"status": "passed"}
