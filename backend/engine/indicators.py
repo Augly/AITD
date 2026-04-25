@@ -1,3 +1,5 @@
+import math
+
 def calc_ema(prices, period):
     if not prices: return []
     ema = [prices[0]]
@@ -55,6 +57,30 @@ def analyze_chanlun_fractals(highs, lows):
     else:
         return "近期无明显分型结构 (处于笔的延续中)"
 
+def calc_atr(highs, lows, closes, period=14):
+    if len(highs) < period + 1: return None
+    tr = []
+    for i in range(1, len(closes)):
+        h_l = highs[i] - lows[i]
+        h_pc = abs(highs[i] - closes[i-1])
+        l_pc = abs(lows[i] - closes[i-1])
+        tr.append(max(h_l, h_pc, l_pc))
+    
+    # Simple moving average of TR
+    atr = sum(tr[:period]) / period
+    for i in range(period, len(tr)):
+        atr = (atr * (period - 1) + tr[i]) / period
+    return atr
+
+def calc_bollinger_bands(prices, period=20, std_dev=2):
+    if len(prices) < period: return None, None, None
+    sma = sum(prices[-period:]) / period
+    variance = sum((p - sma) ** 2 for p in prices[-period:]) / period
+    std = math.sqrt(variance)
+    upper_band = sma + (std_dev * std)
+    lower_band = sma - (std_dev * std)
+    return upper_band, sma, lower_band
+
 def get_technical_summary(klines):
     if not klines or len(klines) < 30:
         return {"error": "Not enough kline data for technical analysis (need at least 30 periods)."}
@@ -68,6 +94,8 @@ def get_technical_summary(klines):
     
     macd_val, macd_sig, macd_hist = calc_macd(closes)
     rsi_val = calc_rsi(closes)
+    atr_val = calc_atr(highs, lows, closes)
+    upper_bb, mid_bb, lower_bb = calc_bollinger_bands(closes)
     chanlun_status = analyze_chanlun_fractals(highs, lows)
     
     trend = "震荡 (Neutral)"
@@ -88,7 +116,10 @@ def get_technical_summary(klines):
             "RSI_14": round(rsi_val, 2) if rsi_val else None,
             "MACD": round(macd_val, 4) if macd_val else None,
             "MACD_Signal": round(macd_sig, 4) if macd_sig else None,
-            "MACD_Histogram": round(macd_hist, 4) if macd_hist else None
+            "MACD_Histogram": round(macd_hist, 4) if macd_hist else None,
+            "ATR_14": round(atr_val, 4) if atr_val else None,
+            "BB_Upper": round(upper_bb, 4) if upper_bb else None,
+            "BB_Lower": round(lower_bb, 4) if lower_bb else None
         },
         "chanlun_analysis": chanlun_status,
         "advice_for_agent": "结合缠论分型与MACD动能进行共振确认。底分型+MACD金叉是做多信号；顶分型+MACD死叉是做空信号。"
