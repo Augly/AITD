@@ -1,23 +1,24 @@
-from backend.engine.models import KLineCache
+from backend.engine.models import KLineCache, Decision, Trade
 
-def get_kline_data(symbol: str, interval: str, session_factory):
+def list_universe():
+    return ["BTCUSDT", "ETHUSDT"] # Kept static for paper mode simplicity
+
+def get_position(symbol: str):
+    return {"symbol": symbol, "qty": 0} # Kept static for paper mode simplicity
+
+def get_recent_decisions(limit: int, session_factory):
     with session_factory() as session:
-        klines = session.query(KLineCache).filter_by(symbol=symbol, interval=interval).order_by(KLineCache.timestamp.desc()).limit(100).all()
+        decisions = session.query(Decision).order_by(Decision.timestamp.desc()).limit(limit).all()
+        return [{"symbol": d.symbol, "action": d.action, "reasoning": d.reasoning} for d in decisions]
+
+def get_kline_data(symbol: str, interval: str, session_factory, limit=100):
+    with session_factory() as session:
+        klines = session.query(KLineCache).filter_by(symbol=symbol, interval=interval).order_by(KLineCache.timestamp.desc()).limit(limit).all()
         return [{"timestamp": k.timestamp, "close": k.close} for k in reversed(klines)]
 
 def get_account_balance():
     # Stub for account balance tool
     return {"USDT": 10000}
-
-def list_universe():
-    return ["BTCUSDT", "ETHUSDT"]
-
-def get_position(symbol: str):
-    return {"symbol": symbol, "qty": 0}
-
-def get_recent_decisions(limit: int):
-    # Stub for reading from DB
-    return []
 
 def place_order(symbol: str, side: str, qty: float):
     return {"status": "success", "symbol": symbol}
