@@ -54,3 +54,45 @@ def close_position(symbol: str):
 
 def pass_turn():
     return {"status": "passed"}
+
+def calculate_position_size(account_equity: float, risk_pct: float, entry_price: float, stop_loss: float) -> dict:
+    """
+    Calculates the exact quantity to trade based on a fixed fractional risk model.
+    """
+    if entry_price <= 0 or stop_loss <= 0 or account_equity <= 0:
+        return {"error": "Invalid prices or equity."}
+    
+    risk_amount = account_equity * (risk_pct / 100.0)
+    price_risk_per_unit = abs(entry_price - stop_loss)
+    
+    if price_risk_per_unit == 0:
+        return {"error": "Entry price and stop loss cannot be identical."}
+        
+    qty = risk_amount / price_risk_per_unit
+    
+    # Calculate leverage required
+    notional = qty * entry_price
+    leverage_required = notional / account_equity
+    
+    return {
+        "suggested_quantity": round(qty, 6),
+        "risk_amount_usd": round(risk_amount, 2),
+        "notional_size_usd": round(notional, 2),
+        "leverage_required": round(leverage_required, 2)
+    }
+
+def analyze_multi_timeframe(symbol: str, session_factory):
+    """
+    Aggregates technicals across 15m, 1h, and 4h intervals.
+    """
+    intervals = ["15m", "1h", "4h"]
+    results = {}
+    from backend.engine.indicators import get_technical_summary
+    for inv in intervals:
+        klines = get_kline_data(symbol, inv, session_factory, limit=100)
+        if not klines or len(klines) < 30:
+            results[inv] = {"error": "Insufficient data"}
+        else:
+            results[inv] = get_technical_summary(klines)
+            
+    return results
