@@ -120,6 +120,7 @@ from .market import (
     refresh_candidate_pool,
 )
 from .utils import clamp, now_iso, num, one_line, safe_last
+import time
 
 
 def clean_mode(value: Any) -> str:
