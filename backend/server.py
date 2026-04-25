@@ -340,7 +340,7 @@ class AppRuntime:
         if not value:
             return None
         try:
-            return __import__("datetime").datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
         except Exception:
             return None
 
@@ -379,7 +379,7 @@ class AppRuntime:
         fetched_ts = None
         if fetched_at:
             try:
-                fetched_ts = __import__("datetime").datetime.fromisoformat(fetched_at.replace("Z", "+00:00")).timestamp()
+                fetched_ts = datetime.fromisoformat(fetched_at.replace("Z", "+00:00")).timestamp()
             except Exception:
                 fetched_ts = None
         slot_start, slot_end = self._aligned_slot(now_ts, settings["marketScanIntervalMinutes"], settings["marketScanOffsetMinute"])

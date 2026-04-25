@@ -227,7 +227,7 @@ class BinanceGateway(ExchangeGateway):
 
     def _signed_params(self, config: dict[str, Any], params: dict[str, Any] | None = None) -> str:
         payload = dict(params or {})
-        payload["timestamp"] = str(int(__import__("time").time() * 1000) + int(self._server_time_offset_ms or 0))
+        payload["timestamp"] = str(int(time.time() * 1000) + int(self._server_time_offset_ms or 0))
         payload["recvWindow"] = str(int(config.get("recvWindow") or 5000))
         query_string = urlencode({key: value for key, value in payload.items() if value not in (None, "")})
         signature = hmac.new(
@@ -246,7 +246,7 @@ class BinanceGateway(ExchangeGateway):
             network_settings=self._get_network_settings(),
         )
         server_time = num(payload.get("serverTime")) if isinstance(payload, dict) else None
-        local_time = int(__import__("time").time() * 1000)
+        local_time = int(time.time() * 1000)
         if server_time is not None:
             self._server_time_offset_ms = int(server_time) - local_time
 
@@ -410,7 +410,7 @@ class BinanceGateway(ExchangeGateway):
 
     def _income_summary(self, config: dict[str, Any]) -> dict[str, Any]:
         limit = 1000
-        now_ms = int(__import__("time").time() * 1000)
+        now_ms = int(time.time() * 1000)
         ninety_days_ms = 90 * 24 * 60 * 60 * 1000
         rows = self._signed_request_json(
             config,
@@ -461,7 +461,7 @@ class BinanceGateway(ExchangeGateway):
         if not session_started_at:
             return None
         try:
-            value = __import__("datetime").datetime.fromisoformat(str(session_started_at).replace("Z", "+00:00"))
+            value = datetime.fromisoformat(str(session_started_at).replace("Z", "+00:00"))
         except Exception:
             return None
         return int(value.timestamp() * 1000)
@@ -477,7 +477,7 @@ class BinanceGateway(ExchangeGateway):
             {
                 "incomeType": "REALIZED_PNL",
                 "startTime": session_start_ms,
-                "endTime": int(__import__("time").time() * 1000),
+                "endTime": int(time.time() * 1000),
                 "limit": 1000,
             },
         )

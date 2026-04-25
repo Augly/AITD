@@ -10,6 +10,7 @@ from .exchanges.catalog import DEFAULT_EXCHANGE_ID, normalize_exchange_id
 from .exchanges import get_active_exchange_gateway
 from .sandbox import call_restricted_function
 from .utils import CONFIG_DIR, DATA_DIR, ROOT, clamp, current_run_date, now_iso, num, read_json, write_json
+from datetime import datetime, timezone
 
 
 LEGACY_LATEST_SCAN_PATH = DATA_DIR / "scans" / "latest.json"
@@ -387,7 +388,7 @@ def refresh_candidate_pool(exchange_id: str | None = None) -> dict[str, Any]:
     payload = {
         "version": 1,
         "runDate": current_run_date(),
-        "fetchedAt": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "fetchedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "source": resolved_source["mode"],
         "exchange": gateway.exchange_id,
         "universeSize": len(symbols),
