@@ -383,9 +383,10 @@ INSTRUCTIONS:
 1. You have a set of tools available. You MUST use them to gather information.
 2. If you want to analyze a symbol's raw data, use the `get_kline_data` tool.
 3. CRITICAL: If you want to use classical trading strategies (MACD, RSI) or Chanlun (缠论 - Chaos Theory/Fractals), use the `analyze_market_technicals` tool. It provides ready-to-use indicator values and fractal analysis.
-4. If you want to review your past mistakes or successes, use `get_recent_decisions`.
-5. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
-6. Think step-by-step before calling a tool.
+4. To get a top-down view (15m, 1h, 4h), use `analyze_multi_timeframe`.
+5. CRITICAL: Before placing an order, you MUST use `calculate_position_size` to determine the exact `qty` based on your stop loss and max 2% account risk.
+6. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
+7. Think step-by-step before calling a tool.
 """
     return system_instruction
 
@@ -956,6 +957,17 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                     "limit": {"type": "integer", "description": "Number of decisions to fetch"}
                 }
                 schema["input_schema"]["required"] = ["limit"]
+            elif tool_name == "analyze_multi_timeframe":
+                schema["input_schema"]["properties"] = {"symbol": {"type": "string"}}
+                schema["input_schema"]["required"] = ["symbol"]
+            elif tool_name == "calculate_position_size":
+                schema["input_schema"]["properties"] = {
+                    "account_equity": {"type": "number"},
+                    "risk_pct": {"type": "number", "description": "e.g. 1.0 for 1%"},
+                    "entry_price": {"type": "number"},
+                    "stop_loss": {"type": "number"}
+                }
+                schema["input_schema"]["required"] = ["account_equity", "risk_pct", "entry_price", "stop_loss"]
                 
             tool_schemas.append(schema)
             

@@ -8,7 +8,9 @@ from backend.engine.agent_tools import (
     list_universe,
     place_order,
     close_position,
-    pass_turn
+    pass_turn,
+    calculate_position_size,
+    analyze_multi_timeframe
 )
 from backend.engine.db import init_db
 
@@ -27,7 +29,9 @@ class ReActAgent:
             "list_universe": list_universe,
             "place_order": place_order,
             "close_position": close_position,
-            "pass_turn": pass_turn
+            "pass_turn": pass_turn,
+            "calculate_position_size": calculate_position_size,
+            "analyze_multi_timeframe": lambda symbol: analyze_multi_timeframe(symbol, self.Session),
         }
         self.history = []
 
