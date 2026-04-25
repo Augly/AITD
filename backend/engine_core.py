@@ -351,86 +351,42 @@ def build_prompt(
     open_orders: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
 ) -> str:
-    response_contract = {
-        "summary": "short plain-language summary",
-        "position_actions": [
-            {
-                "symbol": "POSITION_SYMBOL",
-                "decision": "hold | close | reduce | update",
-                "reason": "short reason",
-                "reduceFraction": 0.25,
-                "stopLoss": 0.0,
-                "takeProfit": 0.0,
-            }
-        ],
-        "entry_actions": [
-            {
-                "symbol": "CANDIDATE_SYMBOL",
-                "action": "open",
-                "side": "long | short",
-                "confidence": 72,
-                "reason": "short reason",
-                "stopLoss": 0.0,
-                "takeProfit": 0.0,
-            }
-        ],
-        "watchlist": [
-            {
-                "symbol": "WATCHLIST_SYMBOL",
-                "reason": "why it is worth watching",
-            }
-        ],
-    }
-    context = {
-        "timestamp": now_iso(),
-        "mode": settings["mode"],
-        "provider": {
-            "preset": provider["preset"],
-            "apiStyle": provider["apiStyle"],
-            "model": provider["model"],
-        },
-        "hardRiskLimits": {
-            "maxNewPositionsPerCycle": settings["maxNewPositionsPerCycle"],
-            "maxOpenPositions": settings["maxOpenPositions"],
-            "maxPositionNotionalUsd": settings["maxPositionNotionalUsd"],
-            "maxGrossExposurePct": settings["maxGrossExposurePct"],
-            "maxAccountDrawdownPct": settings["maxAccountDrawdownPct"],
-            "riskPerTradePct": settings["riskPerTradePct"],
-            "minConfidence": settings["minConfidence"],
-            "allowShorts": settings["allowShorts"],
-        },
-        "account": account_summary,
-        "openPositions": open_positions,
-        "openOrders": open_orders,
-        "candidates": [serialize_candidate_for_prompt(item) for item in candidates],
-    }
-    if market_backdrop:
-        context["marketBackdrop"] = market_backdrop
-    rules = [
-        "Manage every existing position first. Existing positions should appear in position_actions.",
-        "Respect existing exchange open orders and avoid duplicating protection logic that is already active.",
-        f"You may propose at most {settings['maxNewPositionsPerCycle']} new entries.",
-        "Do not propose entries for symbols that are not in candidates.",
-        "Summary and watchlist should only mention symbols that already exist in openPositions or candidates.",
-        "Respect the hard risk limits from the system context even if the user logic asks for more.",
-        "If there is no clear edge, return empty entry_actions.",
-        "Return strict JSON only. No markdown, no prose outside the JSON object.",
-    ]
-    return "\n".join(
-        [
-            "# Editable Trading Logic JSON",
-            json.dumps(prompt_settings["decision_logic"], ensure_ascii=False, indent=2),
-            "",
-            "# System Rules",
-            *[f"- {rule}" for rule in rules],
-            "",
-            "# Required JSON Contract",
-            json.dumps(response_contract, ensure_ascii=False, indent=2),
-            "",
-            "# Current Trading Context",
-            json.dumps(context, ensure_ascii=False, indent=2),
-        ]
-    )
+    # We ignore the massive market_data dump now.
+    
+    # Create a lean snapshot
+    snapshot = f"Mode: {settings.get('mode', 'paper')}\n"
+    snapshot += f"Total Equity: {account_summary.get('equityUsd', 0)}\n"
+    snapshot += f"Available Margin: {account_summary.get('availableExposureUsd', 0)}\n"
+    
+    if open_positions:
+        snapshot += "Open Positions:\n"
+        for pos in open_positions:
+            snapshot += f"  - {pos.get('symbol')}: {pos.get('side')} {pos.get('quantity')} @ {pos.get('entryPrice')}\n"
+    else:
+        snapshot += "Open Positions: None\n"
+        
+    snapshot += "\nCandidate Universe:\n"
+    for cand in candidates:
+        # Just give the symbol, the agent must use get_klines to get price data
+        snapshot += f"  - {cand.get('symbol')}\n"
+        
+    custom_prompt = prompt_settings.get("decision_logic", "")
+    
+    system_instruction = f"""You are an autonomous quantitative trading AI Agent.
+Your goal is to maximize PnL while strictly managing risk.
+{custom_prompt}
+
+CURRENT ACCOUNT SNAPSHOT:
+{snapshot}
+
+INSTRUCTIONS:
+1. You have a set of tools available. You MUST use them to gather information.
+2. If you want to analyze a symbol, use the `get_klines` tool to fetch its historical data.
+3. If you want to review your past mistakes or successes, use `get_recent_decisions`.
+4. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
+5. Think step-by-step before calling a tool.
+"""
+    return system_instruction
 
 
 def default_model_decision(open_positions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1035,6 +991,19 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
         session.add(decision)
         
         # Route execution based on tool calls
+        from .engine.executor import PaperBackend, LiveBackend
+        from .config import read_account_configs
+        
+        # Initialize the proper backend
+        accounts = read_account_configs()
+        account_config = accounts.get(mode_override or "paper", {})
+        
+        if (mode_override or "paper") == "live":
+            # Provide real api keys if live, handled in executor
+            backend_executor = LiveBackend(api_key=account_config.get("apiKey", ""), api_secret=account_config.get("apiSecret", ""))
+        else:
+            backend_executor = PaperBackend()
+            
         for tc in tool_calls:
             if tc["name"] == "place_order":
                 args = tc.get("arguments", {})
@@ -1042,16 +1011,25 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                 side = args.get("side", "BUY")
                 qty = float(args.get("qty", 0.0))
                 
-                trade = Trade(
-                    timestamp=int(time.time()),
-                    symbol=symbol,
-                    side=side,
-                    quantity=qty,
-                    price=0.0 # Will be populated by real execution engine later
-                )
-                session.add(trade)
-                
-                decision.action = f"ORDER_{side}_{symbol}"
+                # Execute through the robust backend which handles risk checks
+                try:
+                    exec_result = backend_executor.execute_decision(symbol, side, qty)
+                    # The executor handles its own state updates (like updating positions in memory/json). 
+                    # For our new SQLite architecture, we log the trade if successful.
+                    if exec_result and exec_result.get("status") == "success":
+                        trade = Trade(
+                            timestamp=int(time.time()),
+                            symbol=symbol,
+                            side=side,
+                            quantity=qty,
+                            price=exec_result.get("price", 0.0)
+                        )
+                        session.add(trade)
+                        decision.action = f"ORDER_{side}_{symbol}_SUCCESS"
+                    else:
+                        decision.action = f"ORDER_{side}_{symbol}_FAILED"
+                except Exception as e:
+                    decision.action = f"ORDER_{side}_{symbol}_ERROR_{str(e)}"
                 
         session.commit()
     
