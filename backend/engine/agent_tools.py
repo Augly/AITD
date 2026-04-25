@@ -1,7 +1,12 @@
 from backend.engine.models import KLineCache, Decision, Trade
+from backend.config import read_fixed_universe
 
 def list_universe():
-    return ["BTCUSDT", "ETHUSDT"] # Kept static for paper mode simplicity
+    universe = read_fixed_universe()
+    symbols = universe.get("symbols", [])
+    if not symbols:
+        return ["BTCUSDT", "ETHUSDT"] # Fallback
+    return symbols
 
 def get_position(symbol: str):
     return {"symbol": symbol, "qty": 0} # Kept static for paper mode simplicity

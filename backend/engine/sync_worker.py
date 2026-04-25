@@ -1,5 +1,6 @@
 from backend.engine.models import KLineCache
 from backend.exchanges.binance import BinanceGateway
+from backend.config import read_fixed_universe
 
 class SyncWorker:
     def __init__(self, session_factory, interval_minutes=5):
@@ -8,11 +9,17 @@ class SyncWorker:
         self.gateway = BinanceGateway() # Paper mode
 
     def run_incremental_sync(self):
-        # In a real scenario, this loops over the universe. We hardcode BTCUSDT for now.
-        symbols = ["BTCUSDT", "ETHUSDT"]
+        universe = read_fixed_universe()
+        symbols = universe.get("symbols", [])
+        if not symbols:
+            symbols = ["BTCUSDT"] # Fallback
+            
         for symbol in symbols:
-            klines = self.gateway.fetch_klines(symbol, "15m", limit=10)
-            self.sync_klines(symbol, "15m", klines)
+            try:
+                klines = self.gateway.fetch_klines(symbol, "15m", limit=10)
+                self.sync_klines(symbol, "15m", klines)
+            except Exception as e:
+                print(f"Error syncing {symbol}: {e}")
 
     def sync_klines(self, symbol: str, interval: str, klines: list):
         with self.Session() as session:
