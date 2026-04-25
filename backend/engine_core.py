@@ -998,12 +998,25 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     
     agent_result = agent.run(instruction)
     
+    # Extract the final decision from the agent loop history
     final_text = ""
-    if isinstance(agent_result, dict):
-        final_text = agent_result.get("content", "")
-    elif isinstance(agent_result, list) and len(agent_result) > 0:
+    tool_calls = []
+    if isinstance(agent_result, list) and len(agent_result) > 0:
         final_msg = agent_result[-1]
-        final_text = final_msg.get("content", "")
+        
+        if isinstance(final_msg, dict):
+            # The agent loop appends {"role": "tool", "content": ...}
+            # We actually want the last assistant message before the tools, 
+            # OR we modify agent_loop.py to return the final assistant msg.
+            # Assuming agent_result is the history, let's find the last assistant message.
+            for msg in reversed(agent_result):
+                if msg.get("role") == "assistant" or "tool_calls" in msg:
+                    final_text = msg.get("text", msg.get("content", ""))
+                    tool_calls = msg.get("tool_calls", [])
+                    break
+    elif isinstance(agent_result, dict):
+        final_text = agent_result.get("content", "")
+        tool_calls = agent_result.get("tool_calls", [])
         
     if isinstance(final_text, list): # if it's a list of blocks
         text_blocks = [b["text"] for b in final_text if b.get("type") == "text"]
@@ -1011,39 +1024,42 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     elif isinstance(final_text, str):
         pass
             
-    # Naive extraction: If it decided to pass, or buy, etc.
-    action = "HOLD"
-    if "BUY" in final_text.upper() or "LONG" in final_text.upper():
-        action = "BUY"
-    elif "SELL" in final_text.upper() or "SHORT" in final_text.upper():
-        action = "SELL"
-    
     with Session() as session:
+        # Save reasoning
         decision = Decision(
             timestamp=int(time.time()),
-            symbol="ALL", # Can be extracted more robustly later
-            action=action,
-            reasoning=final_text
+            symbol="ALL",
+            action="EVALUATED",
+            reasoning=str(final_text)
         )
         session.add(decision)
         
-        if action in ["BUY", "SELL"]:
-            trade = Trade(
-                timestamp=int(time.time()),
-                symbol="BTC", # dummy for now
-                side=action,
-                quantity=0.1,
-                price=50000.0,
-                pnl=0.0
-            )
-            session.add(trade)
-            
+        # Route execution based on tool calls
+        for tc in tool_calls:
+            if tc["name"] == "place_order":
+                args = tc.get("arguments", {})
+                symbol = args.get("symbol", "UNKNOWN")
+                side = args.get("side", "BUY")
+                qty = float(args.get("qty", 0.0))
+                
+                trade = Trade(
+                    timestamp=int(time.time()),
+                    symbol=symbol,
+                    side=side,
+                    quantity=qty,
+                    price=0.0 # Will be populated by real execution engine later
+                )
+                session.add(trade)
+                
+                decision.action = f"ORDER_{side}_{symbol}"
+                
         session.commit()
     
     return {
         "ok": True,
         "mode": mode_override or "paper",
-        "agent_result": final_text
+        "agent_result": final_text,
+        "tool_calls": tool_calls
     }
 
 def run_trading_cycle_batch(reason: str = "manual", modes: list[str] | None = None) -> dict[str, Any]:
