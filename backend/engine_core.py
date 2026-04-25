@@ -999,14 +999,17 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     agent_result = agent.run(instruction)
     
     final_text = ""
-    if isinstance(agent_result, list) and len(agent_result) > 0:
+    if isinstance(agent_result, dict):
+        final_text = agent_result.get("content", "")
+    elif isinstance(agent_result, list) and len(agent_result) > 0:
         final_msg = agent_result[-1]
         final_text = final_msg.get("content", "")
-        if isinstance(final_text, list): # if it's a list of blocks
-            text_blocks = [b["text"] for b in final_text if b.get("type") == "text"]
-            final_text = "\n".join(text_blocks)
-        elif isinstance(final_text, str):
-            pass
+        
+    if isinstance(final_text, list): # if it's a list of blocks
+        text_blocks = [b["text"] for b in final_text if b.get("type") == "text"]
+        final_text = "\n".join(text_blocks)
+    elif isinstance(final_text, str):
+        pass
             
     # Naive extraction: If it decided to pass, or buy, etc.
     action = "HOLD"
@@ -1023,6 +1026,18 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
             reasoning=final_text
         )
         session.add(decision)
+        
+        if action in ["BUY", "SELL"]:
+            trade = Trade(
+                timestamp=int(time.time()),
+                symbol="BTC", # dummy for now
+                side=action,
+                quantity=0.1,
+                price=50000.0,
+                pnl=0.0
+            )
+            session.add(trade)
+            
         session.commit()
     
     return {
