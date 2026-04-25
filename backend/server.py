@@ -409,6 +409,23 @@ class AppRuntime:
             return
         self._scheduler_started = True
 
+        def sync_loop() -> None:
+            from .engine.db import init_db
+            from .engine.sync_worker import SyncWorker
+            Session = init_db()
+            worker = SyncWorker(session_factory=Session, interval_minutes=5)
+            while True:
+                try:
+                    self.record_log("INFO", "Starting background K-line sync...")
+                    worker.run_incremental_sync()
+                    self.record_log("INFO", "Background K-line sync completed.")
+                except Exception as error:
+                    self.record_log("ERROR", f"SyncWorker failed: {error}")
+                time.sleep(5 * 60)
+
+        sync_thread = threading.Thread(target=sync_loop, daemon=True)
+        sync_thread.start()
+
         def loop() -> None:
             while True:
                 try:
