@@ -37,16 +37,37 @@ def _ensure_sensitive_file_permission(path: Path) -> None:
 
 
 def read_json(path: Path, default: Any = None) -> Any:
+    import fcntl
     try:
         _ensure_sensitive_file_permission(path)
-        return json.loads(path.read_text(encoding="utf-8"))
+        if not path.exists():
+            return default
+        with open(path, "r", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                return json.load(f)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
     except Exception:
         return default
 
-
 def write_json(path: Path, payload: Any) -> None:
+    import fcntl
+    import os
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    
+    # Use os.open to avoid truncating the file before acquiring the lock
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.ftruncate(fd, 0)
+        os.lseek(fd, 0, os.SEEK_SET)
+        content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        os.write(fd, content.encode("utf-8"))
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
     if path.name in SENSITIVE_CONFIG_FILES:
         os.chmod(path, 0o600)
 

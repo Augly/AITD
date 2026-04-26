@@ -2241,8 +2241,9 @@ a:hover {
 }
 
 .table-scroll {
+  width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  border-radius: 4px;
 }
 
 .compact-position-grid {
@@ -2689,6 +2690,15 @@ html[data-theme="light"] .short-tag {
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+#radarOutput {
+  background: #111;
+  color: #0f0;
+  border-color: #333;
+  margin-top: 15px;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .log-summary-grid {

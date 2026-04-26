@@ -65,7 +65,23 @@ def evaluate_config_on_history(klines):
         
     return balance - 10000.0, trades
 
+def evaluate_actual_trades(session_factory):
+    """
+    Evaluates the real performance of the Agent by reading the Trade and Decision tables.
+    """
+    from backend.engine.agent_tools import get_agent_performance_metrics
+    metrics = get_agent_performance_metrics(session_factory)
+    summary_text = f"Total Trades: {metrics['total_trades']}, Win Rate: {metrics['win_rate']}, R/R: {metrics['reward_risk_ratio']}, Total PnL: {metrics['total_pnl']}"
+    return metrics["total_pnl"], metrics["total_trades"], summary_text
+
 def optimize_brain_loop(klines, iterations=3):
+    """
+    In the new autonomous mode, the optimizer looks at ACTUAL agent trades and decisions,
+    then prompts the LLM to rewrite brain_config.json to avoid repeating mistakes.
+    """
+    from backend.engine.db import init_db
+    Session = init_db()
+    
     provider_config = read_llm_provider()
     preset = provider_config.get("preset", "anthropic").lower()
     api_key = provider_config.get("apiKey", "")
@@ -79,33 +95,29 @@ def optimize_brain_loop(klines, iterations=3):
     best_pnl = -999999
     best_config = read_brain_config()
     
-    print(f"Starting Autonomous Optimization for {iterations} iterations...")
+    print(f"Starting Autonomous Meta-Optimization for {iterations} iterations based on real trades...")
     
     for i in range(iterations):
         current_config = read_brain_config()
-        pnl, trades = evaluate_config_on_history(klines)
+        pnl, trades_count, summary_text = evaluate_actual_trades(Session)
         
-        print(f"Iteration {i+1}: PnL = {pnl:.2f}, Trades = {trades}")
+        print(f"Iteration {i+1}: {summary_text}")
         
-        if pnl > best_pnl:
-            best_pnl = pnl
-            best_config = current_config
-            print(f"  -> New Best PnL: {best_pnl:.2f}!")
-            
-        # Ask LLM to optimize
+        # We always want to try to optimize the trading rules based on the recent market context
+        # Even if PnL is 0 (no trades), we can prompt the LLM to be more aggressive or use different indicators.
+        
         prompt = f"""
-You are a Meta-Optimization AI for a quantitative trading agent.
-Current performance: PnL = {pnl:.2f}, Trades = {trades}.
+You are the Meta-Optimization AI for our quantitative trading agent.
+Current performance: {summary_text}
 Current Configuration:
 {json.dumps(current_config, indent=2)}
 
-Suggest a new configuration to try to improve PnL. 
-Return ONLY valid JSON matching the exact structure of the configuration.
-Tweak the indicator periods slightly, or modify the trading rules text.
+Your task is to rewrite the "trading_rules" in this JSON configuration to improve future performance.
+If there are no trades, the rules might be too strict. If the PnL is negative, the rules might be too loose or missing stop-losses.
+Provide the ENTIRE updated JSON configuration. Do not wrap it in markdown block. Just valid JSON.
 """
         try:
             res = llm_client.call([{"role": "user", "content": prompt}], [])
-            # Extract JSON from response
             text = res.get("text", "")
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
@@ -114,16 +126,14 @@ Tweak the indicator periods slightly, or modify the trading rules text.
                 
             new_config = json.loads(text)
             
-            # Validate structure
-            if "indicators" in new_config and "macd_fast" in new_config["indicators"]:
+            if "trading_rules" in new_config:
                 write_brain_config(new_config)
-                print("  -> Applied new config from LLM.")
+                print("  -> Applied new trading rules from LLM.")
+                best_config = new_config
             else:
-                print("  -> LLM output invalid format. Reverting to best.")
-                write_brain_config(best_config)
+                print("  -> LLM output invalid format. Skipping.")
         except Exception as e:
             print(f"  -> Optimization step failed: {e}")
-            write_brain_config(best_config)
             
-    print(f"Optimization Complete. Best PnL: {best_pnl:.2f}")
+    print(f"Meta-Optimization Complete.")
     write_brain_config(best_config)

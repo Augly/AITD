@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from backend.engine.db import init_db
 
 def test_sync_worker_adds_klines():
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=__import__('sqlalchemy.pool').pool.StaticPool)
     Session = init_db(engine)
     worker = SyncWorker(session_factory=Session)
     worker.sync_klines("BTCUSDT", "15m", [{"timestamp": 123, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}])
@@ -28,12 +28,14 @@ def test_sync_worker_real_fetch():
     from backend.engine.db import init_db
     from sqlalchemy import create_engine
     
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=__import__('sqlalchemy.pool').pool.StaticPool)
     Session = init_db(engine)
     worker = SyncWorker(session_factory=Session)
     
     with patch('backend.exchanges.binance.BinanceGateway.fetch_klines') as mock_fetch:
-        mock_fetch.return_value = [{"timestamp": 1, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}]
+        import time
+        recent_ts = int(time.time() * 1000)
+        mock_fetch.return_value = [{"timestamp": recent_ts, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}]
         worker.run_incremental_sync()
         
     with Session() as session:
@@ -48,9 +50,11 @@ def test_dynamic_sync_worker(mock_fetch, mock_universe):
     from sqlalchemy import create_engine
     
     mock_universe.return_value = {"symbols": ["XRPUSDT"]}
-    mock_fetch.return_value = [{"timestamp": 1, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}]
+    import time
+    recent_ts = int(time.time() * 1000)
+    mock_fetch.return_value = [{"timestamp": recent_ts, "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}]
     
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=__import__('sqlalchemy.pool').pool.StaticPool)
     Session = init_db(engine)
     worker = SyncWorker(session_factory=Session)
     worker.run_incremental_sync()

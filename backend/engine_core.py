@@ -147,7 +147,23 @@ def position_pnl(position: dict[str, Any], mark_price: float | None) -> float | 
     if entry_price is None or quantity is None or mark is None:
         return None
     multiplier = -1 if position.get("side") == "short" else 1
-    return (mark - entry_price) * quantity * multiplier
+    
+    # We already deducted the open fee and slippage when the position was opened (via notional reduction).
+    # We also deduct the close fee and exit slippage during the close/reduce operation.
+    # For unrealized PnL, we just want to show the current raw PnL minus an estimated closing fee
+    # to be conservative, so the user knows what they'd get if they closed right now.
+    if position.get("source") == "paper":
+        fee_rate = 0.001 # 0.1% estimated exit fee
+        slippage_rate = 0.0005
+        exit_price = mark * (1 - slippage_rate) if position.get("side") == "long" else mark * (1 + slippage_rate)
+        fee_cost = (exit_price * quantity * fee_rate)
+        
+        # Recalculate pnl using exit_price instead of mark
+        raw_pnl = (exit_price - entry_price) * quantity * multiplier - fee_cost
+    else:
+        raw_pnl = (mark - entry_price) * quantity * multiplier
+        
+    return raw_pnl
 
 
 def enrich_position(position: dict[str, Any]) -> dict[str, Any]:
@@ -260,6 +276,20 @@ def serialize_candidate_for_prompt(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def close_position(book: dict[str, Any], position: dict[str, Any], exit_price: float, decision_id: str, reason: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    # Apply a 0.05% slippage on exit for paper trading
+    if position.get("source") == "paper":
+        slippage_rate = 0.0005
+        fee_rate = 0.001
+        if position["side"] == "long":
+            exit_price = exit_price * (1 - slippage_rate)
+        else:
+            exit_price = exit_price * (1 + slippage_rate)
+            
+        # Deduct 0.1% closing fee from realized PnL
+        fee_cost = (exit_price * position["quantity"]) * fee_rate
+    else:
+        fee_cost = 0.0
+
     trade = normalize_trade(
         {
             "id": f"{position['id']}-close-{int(time.time() * 1000)}",
@@ -271,7 +301,7 @@ def close_position(book: dict[str, Any], position: dict[str, Any], exit_price: f
             "entryPrice": position["entryPrice"],
             "exitPrice": exit_price,
             "notionalUsd": position.get("notionalUsd"),
-            "realizedPnl": position_pnl(position, exit_price) or 0,
+            "realizedPnl": (position_pnl(position, exit_price) or 0),
             "openedAt": position.get("openedAt"),
             "closedAt": now_iso(),
             "exitReason": reason,
@@ -292,14 +322,35 @@ def close_position(book: dict[str, Any], position: dict[str, Any], exit_price: f
 
 
 def reduce_position(book: dict[str, Any], position: dict[str, Any], exit_price: float, reduce_fraction: float, decision_id: str, reason: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    # Apply a 0.05% slippage on reduce for paper trading
     total_qty = num(position.get("quantity")) or 0
     fraction = clamp(reduce_fraction, 0.05, 0.95)
     close_qty = total_qty * fraction
     remaining_qty = total_qty - close_qty
     if remaining_qty <= 1e-9:
         return close_position(book, position, exit_price, decision_id, reason)
+        
     partial_position = dict(position)
     partial_position["quantity"] = close_qty
+
+    if position.get("source") == "paper":
+        slippage_rate = 0.0005
+        fee_rate = 0.001
+        if position["side"] == "long":
+            exit_price = exit_price * (1 - slippage_rate)
+        else:
+            exit_price = exit_price * (1 + slippage_rate)
+            
+        # Deduct 0.1% closing fee from realized PnL
+        fee_cost = (exit_price * close_qty) * fee_rate
+    else:
+        fee_cost = 0.0
+
+    # Avoid passing the partial_position dict back into position_pnl which causes dict side effects
+    entry_price = num(partial_position.get("entryPrice")) or 0
+    multiplier = -1 if partial_position.get("side") == "short" else 1
+    raw_pnl = (exit_price - entry_price) * close_qty * multiplier - fee_cost
+
     trade = normalize_trade(
         {
             "id": f"{position['id']}-reduce-{int(time.time() * 1000)}",
@@ -311,7 +362,7 @@ def reduce_position(book: dict[str, Any], position: dict[str, Any], exit_price: 
             "entryPrice": position["entryPrice"],
             "exitPrice": exit_price,
             "notionalUsd": (num(position.get("notionalUsd")) or 0) * fraction,
-            "realizedPnl": position_pnl(partial_position, exit_price) or 0,
+            "realizedPnl": raw_pnl,
             "openedAt": position.get("openedAt"),
             "closedAt": now_iso(),
             "exitReason": reason,
@@ -390,10 +441,12 @@ INSTRUCTIONS:
 1. You have a set of tools available. You MUST use them to gather information.
 2. If you want to analyze a symbol's raw data, use the `get_kline_data` tool.
 3. CRITICAL: If you want to use classical trading strategies (MACD, RSI), Chanlun (缠论 - Chaos Theory/Fractals), or SMC (Smart Money Concepts like FVG, VWAP, Divergence), use the `analyze_market_technicals` tool. It provides ready-to-use indicator values and fractal analysis.
+   *Tip: Use `scan_market_opportunities` to quickly find the top 3 bullish and bearish symbols in the entire universe without checking them one by one.*
 4. To get a top-down view (15m, 1h, 4h), use `analyze_multi_timeframe`.
 5. CRITICAL: Before placing an order, you MUST use EITHER `calculate_position_size` (for fixed 2% risk) OR `calculate_kelly_position_size` (for dynamic sizing based on win rate and R/R ratio) to determine the exact `qty`.
+   *Tip: Use `get_agent_performance_metrics` to get your actual historical win_rate and reward_risk_ratio before calling the Kelly tool.*
 6. If you want to review your past mistakes or successes, use `get_recent_decisions`.
-7. When you are ready to act, use `place_order` to execute a trade, or `pass_turn` if no action is needed.
+7. When you are ready to act, use `place_order` to execute a trade, or `update_position_risk` to trail your stop loss/take profit, or `pass_turn` if no action is needed.
 8. Think step-by-step before calling a tool.
 """
     return system_instruction
@@ -540,24 +593,31 @@ def apply_protection_hits(book: dict[str, Any], decision_id: str) -> list[dict[s
             continue
         stop_loss = num(position.get("stopLoss"))
         take_profit = num(position.get("takeProfit"))
+        
+        # Determine if we hit SL or TP
+        hit_sl = False
+        hit_tp = False
         if position["side"] == "long":
             if stop_loss is not None and mark_price <= stop_loss:
-                book, action = close_position(book, position, mark_price, decision_id, "stop_loss_hit")
-                actions.append(action)
-                continue
-            if take_profit is not None and mark_price >= take_profit:
-                book, action = close_position(book, position, mark_price, decision_id, "take_profit_hit")
-                actions.append(action)
-                continue
+                hit_sl = True
+            elif take_profit is not None and mark_price >= take_profit:
+                hit_tp = True
         else:
             if stop_loss is not None and mark_price >= stop_loss:
-                book, action = close_position(book, position, mark_price, decision_id, "stop_loss_hit")
-                actions.append(action)
-                continue
-            if take_profit is not None and mark_price <= take_profit:
-                book, action = close_position(book, position, mark_price, decision_id, "take_profit_hit")
-                actions.append(action)
-                continue
+                hit_sl = True
+            elif take_profit is not None and mark_price <= take_profit:
+                hit_tp = True
+                
+        if hit_sl:
+            # Force exit price to be the stop loss price to avoid unrealistic fills in paper
+            exit_price = stop_loss if position.get("source") == "paper" else mark_price
+            book, action = close_position(book, position, exit_price, decision_id, "stop_loss_hit")
+            actions.append(action)
+        elif hit_tp:
+            exit_price = take_profit if position.get("source") == "paper" else mark_price
+            book, action = close_position(book, position, exit_price, decision_id, "take_profit_hit")
+            actions.append(action)
+            
     return actions
 
 
@@ -607,6 +667,19 @@ def open_paper_position(
     decision_id: str,
 ) -> dict[str, Any]:
     entry_price = num(candidate.get("price")) or 0
+    
+    # Simulate a 0.05% slippage penalty when opening paper positions
+    if entry_price > 0:
+        slippage_rate = 0.0005
+        if side == "long":
+            entry_price = entry_price * (1 + slippage_rate)
+        else:
+            entry_price = entry_price * (1 - slippage_rate)
+            
+    # Include 0.1% maker/taker fee into initial notional calculation to make it more realistic
+    fee_rate = 0.001
+    fee_cost = notional_usd * fee_rate
+    
     quantity = notional_usd / entry_price if entry_price else 0
     position = normalize_position(
         {
@@ -617,7 +690,7 @@ def open_paper_position(
             "quantity": quantity,
             "initialQuantity": quantity,
             "entryPrice": entry_price,
-            "notionalUsd": notional_usd,
+            "notionalUsd": notional_usd - fee_cost,
             "initialNotionalUsd": notional_usd,
             "stopLoss": stop_loss,
             "takeProfit": take_profit,
@@ -769,7 +842,7 @@ def apply_live_position_action(
         order_side = "SELL" if position["side"] == "long" else "BUY"
         place_market_order(live_config, symbol=position["symbol"], side=order_side, quantity=normalized_qty, reduce_only=True)
         book, recorded = reduce_position(book, position, mark_price, action["reduceFraction"], decision_id, action["reason"] or "model_reduce")
-        if recorded:
+        if recorded is not None:
             recorded["exchange"] = True
             actions.append(recorded)
         return book, actions, warnings
@@ -824,13 +897,15 @@ def apply_paper_position_action(
     warnings: list[str] = []
     mark_price = num(position.get("lastMarkPrice")) or num(position.get("entryPrice")) or 0
     decision = action["decision"]
+    
+    # We should pass mark_price to close/reduce so it can apply slipage logic based on mark
     if decision == "close":
         book, recorded = close_position(book, position, mark_price, decision_id, action["reason"] or "model_close")
         actions.append(recorded)
         return book, actions, warnings
     if decision == "reduce":
         book, recorded = reduce_position(book, position, mark_price, action["reduceFraction"], decision_id, action["reason"] or "model_reduce")
-        if recorded:
+        if recorded is not None:
             actions.append(recorded)
         return book, actions, warnings
     stop_loss = action.get("stopLoss")
@@ -952,9 +1027,22 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                 schema["input_schema"]["properties"] = {
                     "symbol": {"type": "string", "description": "e.g. BTCUSDT"},
                     "side": {"type": "string", "description": "BUY or SELL"},
-                    "qty": {"type": "number", "description": "Amount to trade"}
+                    "qty": {"type": "number", "description": "Amount to trade"},
+                    "stop_loss": {"type": "number", "description": "Stop Loss price (Optional)"},
+                    "take_profit": {"type": "number", "description": "Take Profit price (Optional)"}
                 }
                 schema["input_schema"]["required"] = ["symbol", "side", "qty"]
+            elif tool_name == "update_position_risk":
+                schema["input_schema"]["properties"] = {
+                    "symbol": {"type": "string", "description": "e.g. BTCUSDT"},
+                    "stop_loss": {"type": "number", "description": "New Stop Loss price"},
+                    "take_profit": {"type": "number", "description": "New Take Profit price"}
+                }
+                schema["input_schema"]["required"] = ["symbol"]
+            elif tool_name == "pass_turn":
+                schema["input_schema"]["properties"] = {}
+                schema["input_schema"]["required"] = []
+                schema["description"] = "Pass your turn if no action is needed"
             elif tool_name in ["get_kline_data", "get_position", "close_position", "analyze_market_technicals"]:
                 schema["input_schema"]["properties"] = {
                     "symbol": {"type": "string", "description": "e.g. BTCUSDT"}
@@ -968,6 +1056,12 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
             elif tool_name == "analyze_multi_timeframe":
                 schema["input_schema"]["properties"] = {"symbol": {"type": "string"}}
                 schema["input_schema"]["required"] = ["symbol"]
+            elif tool_name == "get_agent_performance_metrics":
+                schema["input_schema"]["properties"] = {}
+                schema["input_schema"]["required"] = []
+            elif tool_name == "scan_market_opportunities":
+                schema["input_schema"]["properties"] = {}
+                schema["input_schema"]["required"] = []
             elif tool_name == "calculate_kelly_position_size":
                 schema["input_schema"]["properties"] = {
                     "account_equity": {"type": "number"},
@@ -1001,36 +1095,49 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
     trigger_event = reason
     instruction = f"Event: {trigger_event}. Context: {context}. Analyze market and manage positions."
     
-    agent_result = agent.run(instruction)
+    try:
+        agent_result = agent.run(instruction)
+    except Exception as e:
+        import traceback
+        return {
+            "ok": False,
+            "mode": mode_override or "paper",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
     
     # Extract the final decision from the agent loop history
     final_text = ""
     tool_calls = []
     if isinstance(agent_result, list) and len(agent_result) > 0:
-        final_msg = agent_result[-1]
-        
-        if isinstance(final_msg, dict):
-            # The agent loop appends {"role": "tool", "content": ...}
-            # We actually want the last assistant message before the tools, 
-            # OR we modify agent_loop.py to return the final assistant msg.
-            # Assuming agent_result is the history, let's find the last assistant message.
-            for msg in reversed(agent_result):
-                if msg.get("role") == "assistant" or "tool_calls" in msg:
-                    final_text = msg.get("text", msg.get("content", ""))
+        # Look for the last assistant message that contains text reasoning
+        for msg in reversed(agent_result):
+            if msg.get("role") == "assistant":
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    text_blocks = [b["text"] for b in content if b.get("type") == "text"]
+                    if text_blocks:
+                        final_text = "\n".join(text_blocks)
+                        
+                if not final_text and msg.get("text"):
+                    final_text = msg.get("text")
+                    
+                if "tool_calls" in msg:
                     tool_calls = msg.get("tool_calls", [])
+                if final_text:
                     break
     elif isinstance(agent_result, dict):
         final_text = agent_result.get("content", "")
         tool_calls = agent_result.get("tool_calls", [])
         
-    if isinstance(final_text, list): # if it's a list of blocks
+    if isinstance(final_text, list): # fallback if it's still a list of blocks
         text_blocks = [b["text"] for b in final_text if b.get("type") == "text"]
         final_text = "\n".join(text_blocks)
     elif isinstance(final_text, str):
         pass
             
     with Session() as session:
-        # Save reasoning
+        # Save reasoning to Decision
         decision = Decision(
             timestamp=int(time.time()),
             symbol="ALL",
@@ -1038,6 +1145,15 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
             reasoning=str(final_text)
         )
         session.add(decision)
+        
+        # Save memory context for next loop
+        memory = AgentMemory(
+            timestamp=int(time.time()),
+            symbol="ALL",
+            reasoning=str(final_text),
+            decision=tool_calls
+        )
+        session.add(memory)
         
         # Route execution based on tool calls
         from .engine.executor import PaperBackend, LiveBackend
@@ -1053,16 +1169,23 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
         else:
             backend_executor = PaperBackend()
             
+        action_results = []
+            
         for tc in tool_calls:
             if tc["name"] == "place_order":
                 args = tc.get("arguments", {})
                 symbol = args.get("symbol", "UNKNOWN")
                 side = args.get("side", "BUY")
                 qty = float(args.get("qty", 0.0))
+                stop_loss = args.get("stop_loss")
+                take_profit = args.get("take_profit")
+                
+                if stop_loss is not None: stop_loss = float(stop_loss)
+                if take_profit is not None: take_profit = float(take_profit)
                 
                 # Execute through the robust backend which handles risk checks
                 try:
-                    exec_result = backend_executor.execute_decision(symbol, side, qty)
+                    exec_result = backend_executor.execute_decision(symbol, side, qty, stop_loss=stop_loss, take_profit=take_profit)
                     if exec_result and exec_result.get("status") == "success":
                         trade = Trade(
                             timestamp=int(time.time()),
@@ -1073,10 +1196,51 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                         )
                         session.add(trade)
                         decision.action = f"ORDER_{side}_{symbol}_SUCCESS"
+                        action_results.append({
+                            "type": "open",
+                            "symbol": symbol,
+                            "side": side,
+                            "quantity": qty,
+                            "stopLoss": stop_loss,
+                            "takeProfit": take_profit,
+                            "entryPrice": exec_result.get("price", 0.0),
+                            "reason": "Agent executed order"
+                        })
                     else:
                         decision.action = f"ORDER_{side}_{symbol}_FAILED"
                 except Exception as e:
                     decision.action = f"ORDER_{side}_{symbol}_ERROR_{str(e)}"
+            elif tc["name"] == "update_position_risk":
+                args = tc.get("arguments", {})
+                symbol = args.get("symbol", "UNKNOWN")
+                stop_loss = args.get("stop_loss")
+                take_profit = args.get("take_profit")
+                
+                if stop_loss is not None: stop_loss = float(stop_loss)
+                if take_profit is not None: take_profit = float(take_profit)
+                
+                try:
+                    from .engine.state import read_trading_state
+                    book = read_trading_state(accounts.get(mode_override or "paper", {}))[mode_override or "paper"]
+                    pos = next((p for p in book.get("openPositions", []) if p["symbol"] == symbol), None)
+                    if pos:
+                        exec_result = backend_executor.execute_decision(symbol, pos["side"], float(pos["quantity"]), stop_loss=stop_loss, take_profit=take_profit)
+                        if exec_result and exec_result.get("status") == "success":
+                            decision.action = f"UPDATE_RISK_{symbol}_SUCCESS"
+                            action_results.append({
+                                "type": "update",
+                                "symbol": symbol,
+                                "side": pos["side"],
+                                "stopLoss": stop_loss,
+                                "takeProfit": take_profit,
+                                "reason": "Agent updated risk parameters"
+                            })
+                        else:
+                            decision.action = f"UPDATE_RISK_{symbol}_FAILED"
+                    else:
+                        decision.action = f"UPDATE_RISK_{symbol}_NOT_FOUND"
+                except Exception as e:
+                    decision.action = f"UPDATE_RISK_{symbol}_ERROR_{str(e)}"
             elif tc["name"] == "close_position":
                 args = tc.get("arguments", {})
                 symbol = args.get("symbol", "UNKNOWN")
@@ -1092,6 +1256,12 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                         exec_result = backend_executor.execute_decision(symbol, opposite_side, float(pos["quantity"]))
                         if exec_result and exec_result.get("status") == "success":
                             decision.action = f"CLOSE_{symbol}_SUCCESS"
+                            action_results.append({
+                                "type": "close",
+                                "symbol": symbol,
+                                "side": pos["side"],
+                                "reason": "Agent closed position"
+                            })
                         else:
                             decision.action = f"CLOSE_{symbol}_FAILED"
                     else:
@@ -1101,9 +1271,35 @@ def run_trading_cycle(reason: str = "manual", mode_override: str | None = None) 
                 
         session.commit()
     
+    # Format a fake "decision" block to mimic the legacy dashboard structure so UI renders actions
+    legacy_decision = {
+        "id": f"decision-{int(time.time() * 1000)}",
+        "startedAt": now_iso(),
+        "finishedAt": now_iso(),
+        "runnerReason": reason,
+        "mode": mode_override or "paper",
+        "promptSummary": "ReAct Agent Loop",
+        "actions": action_results,
+        "reasoning": final_text,
+        "output": {
+            "summary": "Agent completed reasoning cycle.",
+            "positionActions": [a for a in action_results if a["type"] in ["close", "update", "reduce"]],
+            "entryActions": [a for a in action_results if a["type"] == "open"],
+            "raw": agent_result
+        }
+    }
+    
+    # Save to JSON state to keep Dashboard happy
+    from .engine.state import read_trading_state, write_trading_state
+    settings = read_trading_settings()
+    state = read_trading_state(settings)
+    mode = mode_override or "paper"
+    state[mode].setdefault("decisions", []).append(legacy_decision)
+    write_trading_state(state)
+    
     return {
         "ok": True,
-        "mode": mode_override or "paper",
+        "mode": mode,
         "agent_result": final_text,
         "tool_calls": tool_calls
     }

@@ -95,7 +95,7 @@ class ExecutionBackend(ABC):
         Returns the updated book, recorded actions, and warnings.
         """
 
-    def execute_decision(self, symbol: str, side: str, qty: float) -> dict[str, Any]:
+    def execute_decision(self, symbol: str, side: str, qty: float, stop_loss: float = None, take_profit: float = None) -> dict[str, Any]:
         """A simplified bridge method for the ReAct agent tool calls.
         It reads the current JSON state, applies the execution logic (open or close),
         and writes the state back to ensure the frontend Dashboard stays synced.
@@ -122,12 +122,38 @@ class ExecutionBackend(ABC):
                 book, acts, warns = self.apply_position_action(book, existing_pos, action, decision_id)
                 actions.extend(acts)
             else:
-                # Adding to position not fully supported in simple bridge, treat as hold/success
-                pass
+                # Update risk if same side
+                if stop_loss is not None or take_profit is not None:
+                    action = {"decision": "update", "stopLoss": stop_loss, "takeProfit": take_profit, "reason": "Agent updated risk"}
+                    book, acts, warns = self.apply_position_action(book, existing_pos, action, decision_id)
+                    actions.extend(acts)
         else:
             # Open new position
-            candidate = {"symbol": symbol, "defaultSide": side}
-            entry = {"action": "open", "side": side, "quantity": qty, "confidence": 100, "reason": "Agent placed order"}
+            price = 0.0
+            try:
+                from .db import init_db
+                from .models import KLineCache
+                Session = init_db()
+                with Session() as session:
+                    latest_kline = session.query(KLineCache).filter(KLineCache.symbol == symbol).order_by(KLineCache.timestamp.desc()).first()
+                    if latest_kline:
+                        price = latest_kline.close
+            except Exception:
+                pass
+                
+            notional_usd = qty * price if price > 0 else qty
+            candidate = {"symbol": symbol, "defaultSide": side, "price": price, "baseAsset": symbol.replace("USDT", "")}
+            
+            entry = {
+                "action": "open", 
+                "side": side, 
+                "quantity": qty, 
+                "confidence": 100, 
+                "reason": "Agent placed order",
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
+                "notional_usd": notional_usd
+            }
             book, acts, warns = self.open_position(book, candidate, entry, decision_id)
             actions.extend(acts)
             
@@ -135,7 +161,7 @@ class ExecutionBackend(ABC):
         write_trading_state(state)
         
         # Return success if we executed actions or decided to hold
-        return {"status": "success", "price": 0.0}
+        return {"status": "success", "price": price if price > 0 else 0.0}
 
 
 class PaperBackend(ExecutionBackend):
@@ -206,7 +232,7 @@ class PaperBackend(ExecutionBackend):
     ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
         entry_price = num(candidate.get("price")) or 0
         notional_usd = entry["notional_usd"]
-        quantity = notional_usd / entry_price if entry_price else 0
+        quantity = entry.get("quantity") or (notional_usd / entry_price if entry_price else 0)
         position = normalize_position(
             {
                 "id": f"{candidate['symbol']}-{int(time.time() * 1000)}",

@@ -193,6 +193,9 @@ const els = {
   statusBanner: document.querySelector("#statusBanner"),
   positionMeta: document.querySelector("#positionMeta"),
   positionCards: document.querySelector("#positionCards"),
+  radarMeta: document.querySelector("#radarMeta"),
+  radarCards: document.querySelector("#radarCards"),
+  radarOutput: document.querySelector("#radarOutput"),
   closedPositionMeta: document.querySelector("#closedPositionMeta"),
   closedPositionList: document.querySelector("#closedPositionList"),
   candidateMeta: document.querySelector("#candidateMeta"),
@@ -1610,7 +1613,7 @@ function renderPositions() {
         </div>
         ${positions.map((position) => `
           <div class="compact-row compact-position-grid">
-            <strong>${escapeHtml(position.symbol)}</strong>
+            <strong style="cursor:pointer; color:var(--orange);" onclick="showRadar('${escapeHtml(position.symbol)}')">${escapeHtml(position.symbol)}</strong>
             <span><span class="mode-tag ${escapeHtml(position.side === "short" ? "short" : "long")}">${escapeHtml(position.side.toUpperCase())}</span></span>
             <span>${escapeHtml(fmtPrice(position.entryPrice))}</span>
             <span>${escapeHtml(fmtPrice(position.markPrice))}</span>
@@ -1736,22 +1739,47 @@ function renderCandidates() {
       <p class="meta">已通过 symbol 校验但本轮未拉到行情：${escapeHtml(diagnostics.skippedSymbols.join("、"))}</p>
     `
     : "";
+  const chipsHtml = candidates.map((candidate) => `<span class="symbol-chip" style="cursor:pointer;" onclick="showRadar('${escapeHtml(candidate.symbol)}')">${escapeHtml(candidate.symbol)}</span>`).join("");
+
   if (!candidates.length) {
     els.candidateList.innerHTML = `
       ${invalidBlock}
       ${skippedBlock}
       <p class="empty">先保存候选池配置或执行一轮交易决策。</p>
     `;
+    els.radarCards.innerHTML = `<p class="empty">暂无候选品种可供分析。</p>`;
     return;
   }
   els.candidateList.innerHTML = `
     ${invalidBlock}
     ${skippedBlock}
     <div class="universe-symbol-list">
-      ${candidates.map((candidate) => `<span class="symbol-chip">${escapeHtml(candidate.symbol)}</span>`).join("")}
+      ${chipsHtml}
+    </div>
+  `;
+  els.radarCards.innerHTML = `
+    <div class="universe-symbol-list">
+      ${chipsHtml}
     </div>
   `;
 }
+
+async function showRadar(symbol) {
+  try {
+    els.radarOutput.textContent = `加载中... ${symbol}`;
+    els.radarOutput.hidden = false;
+    const res = await fetch(`/api/chart/layers?symbol=${symbol}`);
+    const data = await res.json();
+    if (!data || Object.keys(data).length === 0) {
+      els.radarOutput.textContent = `[${symbol}] 暂无雷达数据。\n当触发外部 Webhook，或模型主动调用 analyze_market_technicals 时，这里才会生成详细的技术面分析与 Webhook 信号。`;
+    } else {
+      els.radarOutput.textContent = JSON.stringify(data, null, 2);
+    }
+  } catch (err) {
+    els.radarOutput.textContent = `加载失败：${err.message}`;
+  }
+}
+window.showRadar = showRadar;
 
 function normalizeDecisionOutputPayload(output) {
   const payload = output && typeof output === "object" ? output : {};
@@ -1815,6 +1843,12 @@ function renderPositionActionCard(action) {
   if (Number.isFinite(Number(action?.takeProfit))) {
     metrics.push(decisionMetric("止盈", fmtPrice(action.takeProfit)));
   }
+  if (decision === "close" || decision === "reduce" || decision === "update") {
+     const qty = Number(action?.quantity || action?.qty || 0);
+     if (qty > 0) {
+        metrics.push(decisionMetric("操作数量", fmtNumber(qty, 4)));
+     }
+  }
   return `
     <article class="decision-output-card">
       <div class="decision-output-card-head">
@@ -1834,15 +1868,19 @@ function renderEntryActionCard(action) {
   const symbol = String(action?.symbol || "n/a").toUpperCase();
   const side = String(action?.side || "").trim().toLowerCase();
   const actionType = String(action?.action || "open").trim().toLowerCase() || "open";
+  const qty = Number(action?.quantity || action?.qty || 0);
   const metrics = [];
   if (Number.isFinite(Number(action?.confidence))) {
     metrics.push(decisionMetric("置信度", fmtPct(Number(action.confidence), 0)));
   }
-  if (Number.isFinite(Number(action?.stopLoss))) {
-    metrics.push(decisionMetric("止损", fmtPrice(action.stopLoss)));
+  if (Number.isFinite(Number(action?.stop_loss || action?.stopLoss))) {
+    metrics.push(decisionMetric("止损", fmtPrice(action.stop_loss || action.stopLoss)));
   }
-  if (Number.isFinite(Number(action?.takeProfit))) {
-    metrics.push(decisionMetric("止盈", fmtPrice(action.takeProfit)));
+  if (Number.isFinite(Number(action?.take_profit || action?.takeProfit))) {
+    metrics.push(decisionMetric("止盈", fmtPrice(action.take_profit || action.takeProfit)));
+  }
+  if (qty > 0) {
+    metrics.push(decisionMetric("下单数量", fmtNumber(qty, 4)));
   }
   return `
     <article class="decision-output-card">
@@ -1890,6 +1928,9 @@ function renderDecisionCardSection(title, records, renderer, emptyText) {
 }
 
 function renderDecisionOutput(output) {
+  if (!output || Object.keys(output).length === 0) {
+    return `<div class="decision-output-stack"><p class="decision-output-empty">未获取到模型输出，或者此条记录为手动执行的占位记录。</p></div>`;
+  }
   const normalized = normalizeDecisionOutputPayload(output);
   const providerText = normalized.providerStatus
     ? `${normalized.providerStatus.preset || "provider"} / ${normalized.providerStatus.model || "model"}`
@@ -1954,6 +1995,10 @@ function renderDecisionLog() {
         <div class="decision-subsection">
           <h3>Warnings</h3>
           <pre class="pre-block">${escapeHtml(JSON.stringify(decision.warnings || [], null, 2))}</pre>
+        </div>
+        <div class="decision-subsection">
+          <h3>Agent Memory (Reasoning)</h3>
+          <pre class="pre-block" style="color:var(--green); white-space:pre-wrap;">${escapeHtml(decision.reasoning || "No reasoning context recorded for this cycle.")}</pre>
         </div>
         <div class="decision-subsection">
           <div class="decision-content-head">

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "updated": "2026-04-22",
-  "preset": "gpt",
-  "apiStyle": "openai",
-  "model": "gpt-5.4-mini",
-  "baseUrl": "https://api.openai.com/v1",
+  "updated": "2026-04-26",
+  "preset": "deepseek",
+  "apiStyle": "anthropic",
+  "model": "deepseek-v4-pro",
+  "baseUrl": "https://api.deepseek.com/anthropic",
   "apiKey": "",
-  "timeoutSeconds": 45,
+  "timeoutSeconds": 180,
   "temperature": 0.2,
-  "maxOutputTokens": 1200,
+  "maxOutputTokens": 4096,
   "anthropicVersion": "2023-06-01",
   "customHeaders": {}
 }

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from .config import (
     DEFAULT_PROMPT_SETTINGS,
@@ -696,6 +696,13 @@ class TradingAgentHandler(BaseHTTPRequestHandler):
                 payload["paperNextDecisionDueAt"] = self.runtime.next_trade_due_at("paper")
                 payload["liveNextDecisionDueAt"] = self.runtime.next_trade_due_at("live")
                 return _json_response(self, payload)
+            if method == "GET" and parsed.path == "/api/chart/layers":
+                query = parse_qs(parsed.query)
+                symbol = query.get("symbol", ["BTCUSDT"])[0].upper()
+                from backend.utils import DATA_DIR, read_json
+                chart_data_path = DATA_DIR / f"chart_layers_{symbol}.json"
+                data = read_json(chart_data_path, {})
+                return _json_response(self, data)
             if method == "POST" and parsed.path == "/api/trading/run":
                 payload = _read_json_body(self)
                 mode = "live" if str(payload.get("mode") or "paper").strip().lower() == "live" else "paper"
@@ -703,6 +710,31 @@ class TradingAgentHandler(BaseHTTPRequestHandler):
                 if not started:
                     self.runtime.record_log("WARN", f"收到手动{mode.upper()}交易请求，但上一轮仍在执行。")
                 return _json_response(self, {"started": started, "mode": mode, "runner": self.runtime.trade_runners[mode], "nextDecisionDueAt": self.runtime.next_trade_due_at(mode)})
+            if method == "POST" and parsed.path == "/api/webhook/tradingview":
+                payload = _read_json_body(self)
+                symbol = payload.get("symbol", "UNKNOWN").upper()
+                alert_msg = payload.get("message", "External Webhook Trigger")
+                mode = "live" if str(payload.get("mode") or "paper").strip().lower() == "live" else "paper"
+                
+                self.runtime.record_log("INFO", f"收到外部 Webhook 触发: {symbol} - {alert_msg}")
+                
+                # Update chart layers with the webhook info so frontend can see it
+                from backend.utils import DATA_DIR, write_json, read_json
+                chart_data_path = DATA_DIR / f"chart_layers_{symbol}.json"
+                data = read_json(chart_data_path, {"symbol": symbol, "interval": "15m", "technicals": {}})
+                if "technicals" not in data:
+                    data["technicals"] = {}
+                data["technicals"]["latest_webhook"] = {
+                    "timestamp": now_iso(),
+                    "message": alert_msg
+                }
+                write_json(chart_data_path, data)
+                
+                # We can trigger the trade cycle with the specific alert context
+                # To prevent multiple fast webhooks from causing concurrent database locks,
+                # we only trigger if a cycle is not already running.
+                started = self.runtime.start_trade(mode, f"webhook:{symbol}:{alert_msg}")
+                return _json_response(self, {"status": "success", "started": started, "mode": mode, "message": alert_msg})
             if method == "POST" and parsed.path == "/api/trading/reset":
                 payload = _read_json_body(self)
                 reset_mode = payload.get("mode") or "paper"

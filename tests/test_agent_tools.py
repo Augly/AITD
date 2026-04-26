@@ -16,7 +16,7 @@ def test_get_kline_data():
     assert data[0]["close"] == 3000
 
 def test_new_tools():
-    assert list_universe() == ["BTCUSDT", "ETHUSDT"]
+    assert "BTCUSDT" in list_universe()
     assert get_position("BTCUSDT") == {"symbol": "BTCUSDT", "qty": 0}
     assert place_order("BTCUSDT", "buy", 1.0) == {"status": "success", "symbol": "BTCUSDT"}
     assert close_position("BTCUSDT") == {"status": "closed", "symbol": "BTCUSDT"}

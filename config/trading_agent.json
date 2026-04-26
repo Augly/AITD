@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "updated": "2026-04-22",
+  "updated": "2026-04-26",
   "description": "Python-only local trading agent settings.",
   "mode": "paper",
   "activeExchange": "binance",
@@ -9,18 +9,18 @@
     "port": 8788
   },
   "decisionIntervalMinutes": 15,
-  "initialCapitalUsd": 1000,
+  "initialCapitalUsd": 10000.0,
   "maxNewPositionsPerCycle": 1,
-  "maxOpenPositions": 4,
-  "maxPositionNotionalUsd": 150,
-  "maxGrossExposurePct": 100,
-  "maxAccountDrawdownPct": 20,
+  "maxOpenPositions": 5,
+  "maxPositionNotionalUsd": 2000.0,
+  "maxGrossExposurePct": 100.0,
+  "maxAccountDrawdownPct": 20.0,
   "riskPerTradePct": 2.5,
-  "minConfidence": 60,
-  "paperFeesBps": 4,
+  "minConfidence": 70.0,
+  "paperFeesBps": 4.0,
   "allowShorts": true,
   "paperTrading": {
-    "enabled": false
+    "enabled": true
   },
   "liveTrading": {
     "enabled": false

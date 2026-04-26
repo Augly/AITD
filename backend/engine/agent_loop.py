@@ -30,10 +30,13 @@ class ReActAgent:
             "analyze_multi_timeframe": lambda symbol: analyze_multi_timeframe(symbol, self.Session),
             "list_universe": list_universe,
             "place_order": place_order,
+            "update_position_risk": __import__('backend.engine.agent_tools', fromlist=['update_position_risk']).update_position_risk,
             "close_position": close_position,
             "pass_turn": pass_turn,
             "calculate_position_size": calculate_position_size,
-            "calculate_kelly_position_size": calculate_kelly_position_size
+            "calculate_kelly_position_size": calculate_kelly_position_size,
+            "get_agent_performance_metrics": lambda: __import__('backend.engine.agent_tools', fromlist=['get_agent_performance_metrics']).get_agent_performance_metrics(self.Session),
+            "scan_market_opportunities": lambda: __import__('backend.engine.agent_tools', fromlist=['scan_market_opportunities']).scan_market_opportunities(self.Session)
         }
         self.history = []
 
@@ -49,16 +52,30 @@ class ReActAgent:
             self.history.append(assistant_msg)
             
             if response.get("tool_calls"):
+                terminal_action_taken = False
                 for tool in response["tool_calls"]:
                     func = self.tools.get(tool["name"])
                     if func:
                         try:
-                            # Pass session_factory if the tool requires it, but for simplicity here we assume tools are curried or don't need it if not defined
-                            # A better pattern is to inject dependencies when registering tools.
                             result = func(**tool.get("arguments", {}))
                         except Exception as e:
                             result = {"error": str(e)}
-                        self.history.append({"role": "tool", "name": tool["name"], "content": json.dumps(result)})
+                        self.history.append({
+                            "role": "tool", 
+                            "tool_call_id": tool.get("id", "call_123"),
+                            "name": tool["name"], 
+                            "content": json.dumps(result)
+                        })
+                        
+                        if tool["name"] in ["place_order", "close_position", "update_position_risk", "pass_turn"]:
+                            terminal_action_taken = True
+                
+                # If a terminal action was taken, end the reasoning loop early
+                if terminal_action_taken:
+                    return self.history
             else:
                 return self.history
+                
+        # If loop exhausts without terminal action, force pass
+        self.history.append({"role": "assistant", "tool_calls": [{"name": "pass_turn", "arguments": {}}]})
         return self.history

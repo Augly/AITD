@@ -1,5 +1,5 @@
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Float, JSON
+from sqlalchemy import Column, Integer, String, Float, JSON, Index
 
 Base = declarative_base()
 
@@ -14,6 +14,10 @@ class KLineCache(Base):
     low = Column(Float)
     close = Column(Float)
     volume = Column(Float)
+    
+    __table_args__ = (
+        Index('ix_kline_symbol_interval_time', 'symbol', 'interval', 'timestamp', unique=True),
+    )
 
 class AgentMemory(Base):
     __tablename__ = 'agent_memory'

@@ -112,6 +112,7 @@ def request_text(
     timeout_seconds: int = 45,
     network_settings: dict[str, Any] | None = None,
 ) -> str:
+    import httpx
     ns = network_settings or {}
     parsed = urlparse(url)
     if _should_bypass_proxy(parsed.hostname or "", ns):
@@ -147,6 +148,11 @@ def request_text(
         )
         response.raise_for_status()
         return response.text
+    except httpx.TimeoutException as error:
+        raise HttpRequestError(f"Request timed out for {url}: {error}") from error
+    except httpx.RequestError as error:
+        # Catch connection reset by peer, network failures, etc.
+        raise HttpRequestError(f"Network error for {url}: {error}") from error
     except Exception as error:
         response_obj = getattr(error, "response", None)
         status_code = getattr(response_obj, "status_code", None) if response_obj is not None else None

@@ -29,7 +29,23 @@ def position_pnl(position: dict[str, Any], mark_price: float | None) -> float | 
     if entry_price is None or quantity is None or mark is None:
         return None
     multiplier = -1 if position.get("side") == "short" else 1
-    return (mark - entry_price) * quantity * multiplier
+    
+    # We already deducted the open fee and slippage when the position was opened (via notional reduction).
+    # We also deduct the close fee and exit slippage during the close/reduce operation.
+    # For unrealized PnL, we just want to show the current raw PnL minus an estimated closing fee
+    # to be conservative, so the user knows what they'd get if they closed right now.
+    if position.get("source") == "paper":
+        fee_rate = 0.001 # 0.1% estimated exit fee
+        slippage_rate = 0.0005
+        exit_price = mark * (1 - slippage_rate) if position.get("side") == "long" else mark * (1 + slippage_rate)
+        fee_cost = (exit_price * quantity * fee_rate)
+        
+        # Recalculate pnl using exit_price instead of mark
+        raw_pnl = (exit_price - entry_price) * quantity * multiplier - fee_cost
+    else:
+        raw_pnl = (mark - entry_price) * quantity * multiplier
+        
+    return raw_pnl
 
 
 def close_position(
@@ -39,6 +55,20 @@ def close_position(
     decision_id: str,
     reason: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    # Apply a 0.05% slippage on exit for paper trading
+    if position.get("source") == "paper":
+        slippage_rate = 0.0005
+        fee_rate = 0.001
+        if position["side"] == "long":
+            exit_price = exit_price * (1 - slippage_rate)
+        else:
+            exit_price = exit_price * (1 + slippage_rate)
+            
+        # Deduct 0.1% closing fee from realized PnL
+        fee_cost = (exit_price * position["quantity"]) * fee_rate
+    else:
+        fee_cost = 0.0
+
     trade = normalize_trade(
         {
             "id": f"{position['id']}-close-{int(time.time() * 1000)}",
@@ -50,7 +80,7 @@ def close_position(
             "entryPrice": position["entryPrice"],
             "exitPrice": exit_price,
             "notionalUsd": position.get("notionalUsd"),
-            "realizedPnl": position_pnl(position, exit_price) or 0,
+            "realizedPnl": (position_pnl(position, exit_price) or 0) - fee_cost,
             "openedAt": position.get("openedAt"),
             "closedAt": now_iso(),
             "exitReason": reason,
@@ -88,6 +118,25 @@ def reduce_position(
         return close_position(book, position, exit_price, decision_id, reason)
     partial_position = dict(position)
     partial_position["quantity"] = close_qty
+
+    if position.get("source") == "paper":
+        slippage_rate = 0.0005
+        fee_rate = 0.001
+        if position["side"] == "long":
+            exit_price = exit_price * (1 - slippage_rate)
+        else:
+            exit_price = exit_price * (1 + slippage_rate)
+            
+        # Deduct 0.1% closing fee from realized PnL
+        fee_cost = (exit_price * close_qty) * fee_rate
+    else:
+        fee_cost = 0.0
+
+    # Avoid passing the partial_position dict back into position_pnl which causes dict side effects
+    entry_price = num(partial_position.get("entryPrice")) or 0
+    multiplier = -1 if partial_position.get("side") == "short" else 1
+    raw_pnl = (exit_price - entry_price) * close_qty * multiplier - fee_cost
+
     trade = normalize_trade(
         {
             "id": f"{position['id']}-reduce-{int(time.time() * 1000)}",
@@ -99,7 +148,7 @@ def reduce_position(
             "entryPrice": position["entryPrice"],
             "exitPrice": exit_price,
             "notionalUsd": (num(position.get("notionalUsd")) or 0) * fraction,
-            "realizedPnl": position_pnl(partial_position, exit_price) or 0,
+            "realizedPnl": raw_pnl,
             "openedAt": position.get("openedAt"),
             "closedAt": now_iso(),
             "exitReason": reason,

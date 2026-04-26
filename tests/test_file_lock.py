@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.utils import read_json_locked, write_json_locked
+from backend.utils import read_json, write_json
 
 
 class TestReadJsonLocked:
@@ -16,21 +16,21 @@ class TestReadJsonLocked:
         path = tmp_path / "state.json"
         path.write_text(json.dumps({"key": "value"}), encoding="utf-8")
 
-        result = read_json_locked(path)
+        result = read_json(path)
 
         assert result == {"key": "value"}
 
     def test_returns_default_when_file_missing(self, tmp_path: Path) -> None:
         path = tmp_path / "missing.json"
 
-        result = read_json_locked(path, default={"default": True})
+        result = read_json(path, default={"default": True})
 
         assert result == {"default": True}
 
     def test_returns_none_default_when_file_missing(self, tmp_path: Path) -> None:
         path = tmp_path / "missing.json"
 
-        result = read_json_locked(path)
+        result = read_json(path)
 
         assert result is None
 
@@ -38,18 +38,9 @@ class TestReadJsonLocked:
         path = tmp_path / "bad.json"
         path.write_text("not json", encoding="utf-8")
 
-        result = read_json_locked(path, default={})
+        result = read_json(path, default={})
 
         assert result == {}
-
-    def test_creates_lock_file(self, tmp_path: Path) -> None:
-        path = tmp_path / "state.json"
-        path.write_text("{}", encoding="utf-8")
-        lock_path = tmp_path / "state.json.lock"
-
-        read_json_locked(path)
-
-        assert lock_path.exists()
 
 
 class TestWriteJsonLocked:
@@ -57,7 +48,7 @@ class TestWriteJsonLocked:
         path = tmp_path / "state.json"
         payload = {"key": "value", "number": 42}
 
-        write_json_locked(path, payload)
+        write_json(path, payload)
 
         assert path.exists()
         content = json.loads(path.read_text(encoding="utf-8"))
@@ -67,22 +58,14 @@ class TestWriteJsonLocked:
         path = tmp_path / "nested" / "deep" / "state.json"
         payload = {"data": True}
 
-        write_json_locked(path, payload)
+        write_json(path, payload)
 
         assert path.exists()
-
-    def test_creates_lock_file(self, tmp_path: Path) -> None:
-        path = tmp_path / "state.json"
-        lock_path = tmp_path / "state.json.lock"
-
-        write_json_locked(path, {"data": True})
-
-        assert lock_path.exists()
 
     def test_sensitive_file_gets_600_permission(self, tmp_path: Path) -> None:
         path = tmp_path / "live_trading.json"
 
-        write_json_locked(path, {"apiKey": "secret"})
+        write_json(path, {"apiKey": "secret"})
 
         mode = os.stat(path).st_mode & 0o777
         assert mode == 0o600
@@ -92,7 +75,7 @@ class TestWriteJsonLocked:
         _umask = os.umask(0o022)
         os.umask(_umask)
 
-        write_json_locked(path, {"key": "value"})
+        write_json(path, {"key": "value"})
 
         mode = os.stat(path).st_mode & 0o777
         assert mode == (0o666 & ~_umask)
@@ -101,7 +84,7 @@ class TestWriteJsonLocked:
         path = tmp_path / "state.json"
         path.write_text(json.dumps({"old": True}), encoding="utf-8")
 
-        write_json_locked(path, {"new": True})
+        write_json(path, {"new": True})
 
         content = json.loads(path.read_text(encoding="utf-8"))
         assert content == {"new": True}
@@ -113,7 +96,7 @@ class TestWriteJsonLocked:
             pass
 
         try:
-            write_json_locked(path, {"data": True})
+            write_json(path, {"data": True})
             raise WriteCrash("simulated")
         except WriteCrash:
             pass
@@ -130,7 +113,7 @@ class TestWriteJsonLocked:
         def writer(value: int) -> None:
             for _ in range(iterations):
                 try:
-                    write_json_locked(path, {"writer": value})
+                    write_json(path, {"writer": value})
                 except Exception as e:
                     errors.append(e)
 
@@ -150,7 +133,7 @@ class TestWriteJsonLocked:
     def test_no_tmp_files_left_after_write(self, tmp_path: Path) -> None:
         path = tmp_path / "state.json"
 
-        write_json_locked(path, {"data": True})
+        write_json(path, {"data": True})
 
         tmp_files = list(tmp_path.glob("*.tmp*"))
         assert len(tmp_files) == 0
@@ -159,14 +142,14 @@ class TestWriteJsonLocked:
 class TestLockExclusion:
     def test_read_blocks_during_write(self, tmp_path: Path) -> None:
         path = tmp_path / "state.json"
-        write_json_locked(path, {"version": 1})
+        write_json(path, {"version": 1})
         results: list[dict | None] = []
 
         def slow_writer() -> None:
-            write_json_locked(path, {"version": 2})
+            write_json(path, {"version": 2})
 
         def reader() -> None:
-            results.append(read_json_locked(path))
+            results.append(read_json(path))
 
         t1 = threading.Thread(target=slow_writer)
         t2 = threading.Thread(target=reader)
@@ -181,13 +164,13 @@ class TestLockExclusion:
 
     def test_concurrent_reads_are_safe(self, tmp_path: Path) -> None:
         path = tmp_path / "state.json"
-        write_json_locked(path, {"data": "initial"})
+        write_json(path, {"data": "initial"})
         results: list[dict | None] = []
         errors: list[Exception] = []
 
         def reader() -> None:
             try:
-                results.append(read_json_locked(path))
+                results.append(read_json(path))
             except Exception as e:
                 errors.append(e)
 

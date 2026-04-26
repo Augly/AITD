@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-04-22",
+  "updated": "2026-04-26",
   "description": "Fixed futures symbol universe for the open-source trading-agent build. Edit this list to change what the agent reviews.",
   "symbols": [
     "BTCUSDT",
